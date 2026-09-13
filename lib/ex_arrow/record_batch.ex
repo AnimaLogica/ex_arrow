@@ -87,9 +87,9 @@ defmodule ExArrow.RecordBatch do
 
   ## Nullability
 
-  `from_columns/4` produces non-nullable columns (`Field.nullable = false`).
-  Pass nulls by binding a separate column or by using a parameter schema
-  that accepts non-null values only.
+  `from_columns/4`, `from_lists/1`, and `from_map/1` produce non-nullable
+  columns (`Field.nullable = false`). `from_lists/1` and `from_map/1` reject
+  `nil` cells in 0.9; null-bitmap support arrives with the core-model release.
   """
   alias ExArrow.Native
   alias ExArrow.Schema
@@ -159,6 +159,81 @@ defmodule ExArrow.RecordBatch do
   def column_names(%__MODULE__{} = batch) do
     batch |> schema() |> Schema.field_names()
   end
+
+  @doc """
+  Create a `RecordBatch` from named columns of Elixir lists.
+
+  Each column is a `{name, dtype, values}` triple. `name` may be a string or
+  atom. `dtype` may be a `from_columns/4` dtype string (`"s64"`, `"utf8"`, …)
+  or the matching atom (`:s64`, `:utf8`, …). `values` is a list of scalar
+  cells; all columns must have the same length.
+
+  Supports every dtype accepted by `from_columns/4`. Temporal and integer
+  dtypes expect integer cells (days/ticks as in the wire format). Float
+  dtypes accept integers or floats. Boolean expects `true`/`false`. Utf8
+  expects valid UTF-8 binaries; `binary` / `large_binary` accept any binary.
+
+  `nil` cells are rejected in 0.9 (no null-bitmap encoding yet). Nested
+  lists, maps, and tuples as cells are rejected.
+
+  Packs into the `from_columns/4` wire format and reuses that NIF path.
+
+  ## Examples
+
+      {:ok, batch} =
+        ExArrow.RecordBatch.from_lists([
+          {"id", :s64, [1, 2, 3]},
+          {"name", :utf8, ["a", "b", "c"]}
+        ])
+
+      {:error, _} =
+        ExArrow.RecordBatch.from_lists([{"x", :s64, [1, nil]}])
+  """
+  @spec from_lists([{String.t() | atom(), atom() | String.t(), list()}]) ::
+          {:ok, t()} | {:error, String.t()}
+  def from_lists(columns) when is_list(columns) do
+    with :ok <- validate_from_lists_shape(columns),
+         {:ok, names, dtypes, binaries, length} <- pack_from_lists(columns) do
+      from_columns(names, binaries, dtypes, length)
+    end
+  end
+
+  def from_lists(_), do: {:error, "from_lists/1 expects a list of {name, dtype, values} triples"}
+
+  @doc """
+  Create a `RecordBatch` from a map of column name => value list.
+
+  Keys are sorted lexicographically (after converting atom keys to strings)
+  so the resulting schema order is stable. Value lists must all have the
+  same length.
+
+  Dtypes are inferred from the cells of each column:
+
+  | Cells                         | Dtype  |
+  |-------------------------------|--------|
+  | integers                      | `s64`  |
+  | floats (or mix with integers) | `f64`  |
+  | booleans                      | `bool` |
+  | binaries (valid UTF-8)        | `utf8` |
+
+  Empty columns and mixed incompatible cell types return `{:error, message}`.
+  For explicit dtypes use `from_lists/1`.
+
+  ## Examples
+
+      {:ok, batch} =
+        ExArrow.RecordBatch.from_map(%{"id" => [1, 2], "name" => ["a", "b"]})
+  """
+  @spec from_map(%{optional(String.t() | atom()) => list()}) ::
+          {:ok, t()} | {:error, String.t()}
+  def from_map(map) when is_map(map) and map_size(map) > 0 do
+    with {:ok, columns} <- map_to_list_columns(map) do
+      from_lists(columns)
+    end
+  end
+
+  def from_map(%{}), do: {:error, "from_map/1 requires at least one column"}
+  def from_map(_), do: {:error, "from_map/1 expects a map of name => list"}
 
   @doc """
   Create a `RecordBatch` from column-oriented binary data.
@@ -239,4 +314,293 @@ defmodule ExArrow.RecordBatch do
       {:error, _} = err -> err
     end
   end
+
+  # --- from_lists/1 / from_map/1 --------------------------------------------
+
+  defp validate_from_lists_shape([]), do: {:error, "from_lists/1 requires at least one column"}
+
+  defp validate_from_lists_shape(columns) do
+    bad_shape? =
+      Enum.any?(columns, fn
+        {_n, _d, values} when is_list(values) -> false
+        _ -> true
+      end)
+
+    if bad_shape? do
+      {:error, "from_lists/1 expects {name, dtype, values} triples with list values"}
+    else
+      lengths = Enum.map(columns, fn {_n, _d, values} -> length(values) end)
+
+      case Enum.uniq(lengths) do
+        [_] -> :ok
+        _ -> {:error, "from_lists/1 column lengths must match, got: #{inspect(lengths)}"}
+      end
+    end
+  end
+
+  defp pack_from_lists(columns) do
+    {_n, _d, first_values} = hd(columns)
+    length = length(first_values)
+
+    reduced =
+      Enum.reduce_while(columns, {:ok, {[], [], []}}, fn {name, dtype, values},
+                                                         {:ok, {ns, ds, bs}} ->
+        with {:ok, name_str} <- normalize_field_name(name),
+             {:ok, dtype_str} <- normalize_list_dtype(dtype),
+             {:ok, binary} <- pack_column(dtype_str, values) do
+          {:cont, {:ok, {[name_str | ns], [dtype_str | ds], [binary | bs]}}}
+        else
+          {:error, _} = err -> {:halt, err}
+        end
+      end)
+
+    case reduced do
+      {:ok, {names_rev, dtypes_rev, binaries_rev}} ->
+        {:ok, Enum.reverse(names_rev), Enum.reverse(dtypes_rev), Enum.reverse(binaries_rev),
+         length}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp map_to_list_columns(map) do
+    pairs = Enum.map(map, fn {name, values} -> {name, values} end)
+
+    reduced =
+      Enum.reduce_while(pairs, {:ok, []}, fn {name, values}, {:ok, acc} ->
+        append_inferred_column(name, values, acc)
+      end)
+
+    case reduced do
+      {:ok, columns_rev} ->
+        columns =
+          columns_rev
+          |> Enum.reverse()
+          |> Enum.sort_by(fn {name, _dtype, _values} -> name end)
+
+        {:ok, columns}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp append_inferred_column(_name, values, _acc) when not is_list(values) do
+    {:halt, {:error, "from_map/1 values must be lists, got: #{inspect(values)}"}}
+  end
+
+  defp append_inferred_column(_name, [], _acc) do
+    {:halt, {:error, "from_map/1 cannot infer dtype for an empty column"}}
+  end
+
+  defp append_inferred_column(name, values, acc) do
+    with {:ok, dtype} <- infer_list_dtype(values),
+         {:ok, name_str} <- normalize_field_name(name) do
+      {:cont, {:ok, [{name_str, dtype, values} | acc]}}
+    else
+      {:error, _} = err -> {:halt, err}
+    end
+  end
+
+  defp infer_list_dtype(values) do
+    reduced =
+      Enum.reduce_while(values, {:ok, :unknown}, fn value, {:ok, acc} ->
+        merge_inferred_class(acc, value)
+      end)
+
+    case reduced do
+      {:ok, class} -> dtype_class_to_string(class)
+      {:error, _} = err -> err
+    end
+  end
+
+  defp merge_inferred_class(_acc, nil) do
+    {:halt, {:error, "from_lists/1 does not support nil cells (null bitmaps not encoded in 0.9)"}}
+  end
+
+  defp merge_inferred_class(_acc, v) when is_list(v) or is_map(v) or is_tuple(v) do
+    {:halt, {:error, "from_lists/1 cell must be a scalar, got: #{inspect(v)}"}}
+  end
+
+  defp merge_inferred_class(acc, v) do
+    case {acc, classify_cell(v)} do
+      {:unknown, class} -> {:cont, {:ok, class}}
+      {class, class} -> {:cont, {:ok, class}}
+      {:integer, :float} -> {:cont, {:ok, :float}}
+      {:float, :integer} -> {:cont, {:ok, :float}}
+      {a, b} -> {:halt, {:error, "from_map/1 mixed cell types in column (#{a} vs #{b})"}}
+    end
+  end
+
+  defp dtype_class_to_string(:integer), do: {:ok, "s64"}
+  defp dtype_class_to_string(:float), do: {:ok, "f64"}
+  defp dtype_class_to_string(:boolean), do: {:ok, "bool"}
+  defp dtype_class_to_string(:utf8), do: {:ok, "utf8"}
+
+  defp dtype_class_to_string(:invalid_utf8),
+    do: {:error, "from_map/1 binary cells must be valid UTF-8 (use from_lists/1 with :binary)"}
+
+  defp dtype_class_to_string(:other),
+    do: {:error, "from_map/1 cannot infer dtype from cell values"}
+
+  defp dtype_class_to_string(:unknown),
+    do: {:error, "from_map/1 cannot infer dtype for an empty column"}
+
+  defp classify_cell(v) when is_integer(v), do: :integer
+  defp classify_cell(v) when is_float(v), do: :float
+  defp classify_cell(v) when is_boolean(v), do: :boolean
+
+  defp classify_cell(v) when is_binary(v) do
+    if String.valid?(v), do: :utf8, else: :invalid_utf8
+  end
+
+  defp classify_cell(_), do: :other
+
+  defp normalize_field_name(name) when is_binary(name), do: {:ok, name}
+  defp normalize_field_name(name) when is_atom(name), do: {:ok, Atom.to_string(name)}
+
+  defp normalize_field_name(other),
+    do: {:error, "field name must be a string or atom, got: #{inspect(other)}"}
+
+  defp normalize_list_dtype(dtype) when is_atom(dtype),
+    do: normalize_list_dtype(Atom.to_string(dtype))
+
+  defp normalize_list_dtype(dtype) when is_binary(dtype) do
+    known = ~w(
+      s8 s16 s32 s64 u8 u16 u32 u64 f32 f64 bool
+      date32 date64
+      timestamp_seconds timestamp_millis timestamp_micros timestamp_nanos
+      duration_seconds duration_millis duration_micros duration_nanos
+      utf8 large_utf8 binary large_binary
+    )
+
+    if dtype in known do
+      {:ok, dtype}
+    else
+      {:error, "unsupported from_lists/1 dtype: #{inspect(dtype)}"}
+    end
+  end
+
+  defp normalize_list_dtype(other),
+    do: {:error, "unsupported from_lists/1 dtype: #{inspect(other)}"}
+
+  defp pack_column(dtype, values) do
+    reduced =
+      Enum.reduce_while(values, {:ok, []}, fn value, {:ok, acc} ->
+        case pack_cell(dtype, value) do
+          {:ok, chunk} -> {:cont, {:ok, [chunk | acc]}}
+          {:error, _} = err -> {:halt, err}
+        end
+      end)
+
+    case reduced do
+      {:ok, chunks_rev} ->
+        binary = chunks_rev |> Enum.reverse() |> IO.iodata_to_binary()
+        {:ok, binary}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp pack_cell(_dtype, nil),
+    do: {:error, "from_lists/1 does not support nil cells (null bitmaps not encoded in 0.9)"}
+
+  defp pack_cell(_dtype, value) when is_list(value) or is_map(value) or is_tuple(value),
+    do: {:error, "from_lists/1 cell must be a scalar, got: #{inspect(value)}"}
+
+  defp pack_cell("s8", v) when is_integer(v), do: pack_int(v, -128, 127, 8, "int8")
+  defp pack_cell("s16", v) when is_integer(v), do: pack_int(v, -32_768, 32_767, 16, "int16")
+
+  defp pack_cell("s32", v) when is_integer(v),
+    do: pack_int(v, -2_147_483_648, 2_147_483_647, 32, "int32")
+
+  defp pack_cell("s64", v) when is_integer(v),
+    do: pack_int(v, -9_223_372_036_854_775_808, 9_223_372_036_854_775_807, 64, "int64")
+
+  defp pack_cell("u8", v) when is_integer(v), do: pack_uint(v, 255, 8, "uint8")
+  defp pack_cell("u16", v) when is_integer(v), do: pack_uint(v, 65_535, 16, "uint16")
+  defp pack_cell("u32", v) when is_integer(v), do: pack_uint(v, 4_294_967_295, 32, "uint32")
+
+  defp pack_cell("u64", v) when is_integer(v) do
+    if v >= 0 and v <= 18_446_744_073_709_551_615 do
+      {:ok, <<v::little-unsigned-64>>}
+    else
+      {:error, "uint64 value out of range: #{v}"}
+    end
+  end
+
+  defp pack_cell("f32", v) when is_integer(v), do: pack_cell("f32", v * 1.0)
+  defp pack_cell("f32", v) when is_float(v), do: {:ok, <<v::little-float-32>>}
+  defp pack_cell("f64", v) when is_integer(v), do: pack_cell("f64", v * 1.0)
+  defp pack_cell("f64", v) when is_float(v), do: {:ok, <<v::little-float-64>>}
+
+  defp pack_cell("bool", true), do: {:ok, <<1>>}
+  defp pack_cell("bool", false), do: {:ok, <<0>>}
+
+  defp pack_cell("date32", v) when is_integer(v),
+    do: pack_int(v, -2_147_483_648, 2_147_483_647, 32, "date32")
+
+  defp pack_cell("date64", v) when is_integer(v),
+    do: pack_int(v, -9_223_372_036_854_775_808, 9_223_372_036_854_775_807, 64, "date64")
+
+  defp pack_cell(dtype, v)
+       when dtype in [
+              "timestamp_seconds",
+              "timestamp_millis",
+              "timestamp_micros",
+              "timestamp_nanos",
+              "duration_seconds",
+              "duration_millis",
+              "duration_micros",
+              "duration_nanos"
+            ] and is_integer(v) do
+    pack_int(v, -9_223_372_036_854_775_808, 9_223_372_036_854_775_807, 64, dtype)
+  end
+
+  defp pack_cell(dtype, v) when dtype in ["utf8", "large_utf8"] and is_binary(v) do
+    if String.valid?(v) do
+      {:ok, <<byte_size(v)::little-unsigned-32, v::binary>>}
+    else
+      {:error, "#{dtype} cell is not valid UTF-8"}
+    end
+  end
+
+  defp pack_cell(dtype, v) when dtype in ["binary", "large_binary"] and is_binary(v) do
+    {:ok, <<byte_size(v)::little-unsigned-32, v::binary>>}
+  end
+
+  defp pack_cell(dtype, value),
+    do: {:error, "cannot pack #{inspect(value)} as #{dtype}"}
+
+  defp pack_int(v, min, max, 8, label) do
+    if v >= min and v <= max, do: {:ok, <<v::little-signed-8>>}, else: out_of_range(label, v)
+  end
+
+  defp pack_int(v, min, max, 16, label) do
+    if v >= min and v <= max, do: {:ok, <<v::little-signed-16>>}, else: out_of_range(label, v)
+  end
+
+  defp pack_int(v, min, max, 32, label) do
+    if v >= min and v <= max, do: {:ok, <<v::little-signed-32>>}, else: out_of_range(label, v)
+  end
+
+  defp pack_int(v, min, max, 64, label) do
+    if v >= min and v <= max, do: {:ok, <<v::little-signed-64>>}, else: out_of_range(label, v)
+  end
+
+  defp pack_uint(v, max, 8, label) do
+    if v >= 0 and v <= max, do: {:ok, <<v::little-unsigned-8>>}, else: out_of_range(label, v)
+  end
+
+  defp pack_uint(v, max, 16, label) do
+    if v >= 0 and v <= max, do: {:ok, <<v::little-unsigned-16>>}, else: out_of_range(label, v)
+  end
+
+  defp pack_uint(v, max, 32, label) do
+    if v >= 0 and v <= max, do: {:ok, <<v::little-unsigned-32>>}, else: out_of_range(label, v)
+  end
+
+  defp out_of_range(label, v), do: {:error, "#{label} value out of range: #{v}"}
 end

@@ -43,6 +43,7 @@ defmodule ExArrow.Batch do
   """
 
   alias ExArrow.Compute
+  alias ExArrow.Compute.Expression
   alias ExArrow.Native
   alias ExArrow.RecordBatch
   alias ExArrow.Schema
@@ -198,21 +199,27 @@ defmodule ExArrow.Batch do
   end
 
   @doc """
-  Filter rows of `batch` using the first (boolean) column of `predicate_batch`.
+  Filter rows of `batch` using a boolean mask batch or an `Expression`.
 
-  Delegates directly to `ExArrow.Compute.filter/2`.  Rows where the predicate
-  is `true` are kept; rows where it is `false` or `null` are dropped.  The
-  predicate's first column must be a boolean Arrow array with the same row
-  count as `batch`.
+  Delegates directly to `ExArrow.Compute.filter/2`. Rows where the predicate
+  is `true` are kept; rows where it is `false` or `null` are dropped.
+
+  When `predicate` is a `RecordBatch`, its first column must be a boolean Arrow
+  array with the same row count as `batch`. When it is an
+  `ExArrow.Compute.Expression`, the expression is evaluated in native memory.
 
   Returns `{:ok, filtered_batch}` or `{:error, message}`.
 
-  ## Example
+  ## Examples
 
       {:ok, mask}     = ExArrow.Compute.project(batch, ["is_active"])
       {:ok, filtered} = ExArrow.Batch.filter(batch, mask)
+
+      alias ExArrow.Compute.Expression, as: E
+      {:ok, filtered} =
+        ExArrow.Batch.filter(batch, E.gt(E.field("score"), E.scalar(0.9)))
   """
-  @spec filter(RecordBatch.t(), RecordBatch.t()) ::
+  @spec filter(RecordBatch.t(), RecordBatch.t() | Expression.t()) ::
           {:ok, RecordBatch.t()} | {:error, String.t()}
   def filter(batch, predicate) do
     Compute.filter(batch, predicate)

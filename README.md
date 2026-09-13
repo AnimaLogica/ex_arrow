@@ -9,6 +9,12 @@
 
 Native Apache Arrow for the BEAM: IPC streaming, Arrow Flight, Arrow Flight SQL, ADBC database bindings, and Arrow-native pipelines. Column data lives in Rust buffers; Elixir holds lightweight opaque handles. Precompiled NIFs for Linux, macOS, and Windows — no Rust required to use.
 
+> **v0.9.0 — Dataset and Scanner.** Discover Hive-partitioned Parquet/IPC trees,
+> filter with `ExArrow.Compute.Expression`, and scan through partition prune →
+> row-group pushdown → residual `Compute.filter/2`. See
+> [Datasets and scanners](#datasets-and-scanners) and the
+> [Datasets guide](https://ex-arrow.hexdocs.pm/guides/11_datasets.html).
+>
 > **v0.8.0 — Larger-than-memory Parquet.** Column/predicate/row-group pushdown,
 > write compression options, footer metadata, and multi-file directory streams.
 > See [Parquet: read and write](#parquet-read-and-write) and the
@@ -31,6 +37,7 @@ Native Apache Arrow for the BEAM: IPC streaming, Arrow Flight, Arrow Flight SQL,
 - [Requirements](#requirements)
 - [Installation](#installation)
 - [Quick start](#quick-start)
+- [What's changed in v0.9.0](#whats-changed-in-v090)
 - [What's changed in v0.8.0](#whats-changed-in-v080)
 - [What's changed in v0.7.0](#whats-changed-in-v070)
 - [Livebook tutorials](#livebook-tutorials)
@@ -55,6 +62,7 @@ Native Apache Arrow for the BEAM: IPC streaming, Arrow Flight, Arrow Flight SQL,
   - [Shipped (v0.5.0)](#shipped-v050)
   - [Shipped (v0.7.0)](#shipped-v070)
   - [Shipped (v0.8.0)](#shipped-v080)
+  - [Shipped (v0.9.0)](#shipped-v090)
 - [FAQ](#faq)
 - [License](#license)
 
@@ -215,7 +223,7 @@ Add the dependency:
 
 ```elixir
 def deps do
-  [{:ex_arrow, "~> 0.8"}]
+  [{:ex_arrow, "~> 0.9"}]
 end
 ```
 
@@ -243,11 +251,11 @@ For **path dependencies** in Livebook (`Mix.install`), open notebooks from
 is detected) or use the Hex package:
 
 ```elixir
-Mix.install([{:ex_arrow, "~> 0.8.0"}, {:rustler, "~> 0.36", optional: true}])
+Mix.install([{:ex_arrow, "~> 0.9.0"}, {:rustler, "~> 0.36", optional: true}])
 ```
 
 Alternatively, use the published Hex package so the precompiled NIF is used
-and no Rust is needed: `Mix.install([{:ex_arrow, "~> 0.8.0"}])`.
+and no Rust is needed: `Mix.install([{:ex_arrow, "~> 0.9.0"}])`.
 
 ---
 
@@ -326,6 +334,39 @@ Enum.each(stream, fn batch -> process(batch) end)
 {:ok, schema} = ExArrow.Stream.schema(stream)
 batch = ExArrow.Stream.next(stream)
 ```
+
+---
+
+## What's changed in v0.9.0
+
+v0.9.0 adds a **Dataset / Scanner** layer on top of v0.8.0 Parquet pushdown:
+discover partitioned trees, compile analyzable Expression filters, and scan
+with a three-level pushdown ladder (Hive partition prune → Parquet row-group
+pushdown → residual `Compute.filter/2`).
+
+### Dataset, Scanner, Expression
+
+| API | Purpose |
+|-----|---------|
+| `ExArrow.Dataset.open/2` | Open a directory, file, glob, or path list; Hive `partition_values` |
+| `ExArrow.Dataset.Fragment` | One file fragment with path, format, size, partition map |
+| `ExArrow.Dataset.scanner/2` | Lazy scan plan: `:columns`, `:filter`, `:batch_size` |
+| `ExArrow.Scanner.to_stream/1` | Agent-backed `:dataset` stream; `Stream.close/1` for early abandon |
+| `ExArrow.Scanner.stats/1` | Exact fragment / row-group prune counts (preview or live) |
+| `ExArrow.Compute.Expression` | Builders, `validate/2`, `to_parquet_filters/1` (pushable vs residual) |
+| `ExArrow.Compute.filter/2` | Residual evaluation of an Expression against a RecordBatch |
+| `ExArrow.FileSystem` | `Local` and `Memory` discovery backends |
+| `RecordBatch.from_lists/1`, `from_map/1` | Ergonomic batch construction |
+
+Native stack: arrow-rs / parquet / arrow-flight **59.3.0** (from 56).
+
+### Docs, Livebook, bench
+
+- Datasets Livebook (`livebook/06_datasets.livemd`) and
+  [Datasets guide](guides/11_datasets.md)
+- Pushdown-ladder timing helper: `bench/dataset_scan_bench.exs`
+
+See [CHANGELOG.md](CHANGELOG.md) for the full list.
 
 ---
 
@@ -415,6 +456,7 @@ without `:telemetry`, the Flow/GenStage/Broadway modules return
 - [08 Arrow and GenStage](guides/08_arrow_and_genstage.md)
 - [09 Arrow and Broadway](guides/09_arrow_and_broadway.md)
 - [10 Arrow pipeline patterns](guides/10_arrow_pipeline_patterns.md)
+- [11 Datasets and scanners](guides/11_datasets.md)
 
 ### New benchmarks
 
@@ -435,8 +477,9 @@ Interactive notebooks (open in [Livebook](https://livebook.dev)):
 - **[03 ADBC](livebook/03_adbc.livemd)** — Database, Connection, Statement, Stream (`:adbc_package` in Livebook).
 - **[04 ADBC integration](livebook/04_adbc_integration.livemd)** — Connection pooling with NimblePool.
 - **[05 Parquet](livebook/05_parquet.livemd)** — Pushdown reads, compressed writes, multi-file directories, PyArrow side-by-side.
+- **[06 Datasets](livebook/06_datasets.livemd)** — Hive Dataset open, Expression scanner, prune stats, PyArrow `dataset` side-by-side.
 
-See [livebook/README.md](livebook/README.md) for run instructions.  Notebooks use Hex `~> 0.8.0` by default; opening from `livebook/` in a clone builds from source.
+See [livebook/README.md](livebook/README.md) for run instructions. Notebooks use Hex `~> 0.9.0` by default; opening from `livebook/` in a clone builds from source.
 
 ---
 
@@ -763,6 +806,40 @@ Full guide: [docs/parquet_guide.md](docs/parquet_guide.md). Livebook:
 
 ---
 
+## Datasets and scanners
+
+Discover Hive-partitioned Parquet (or IPC) trees, then scan with projection
+and Expression filters. Partition pruning, Parquet row-group pushdown, and
+residual `Compute.filter/2` form a pushdown ladder.
+
+```elixir
+alias ExArrow.Compute.Expression, as: E
+
+{:ok, dataset} =
+  ExArrow.Dataset.open("/data/events",
+    partitioning: {:hive, schema: [{"year", :int32}, {"month", :int32}]}
+  )
+
+filter =
+  E.and_(
+    E.gte(E.field("year"), E.scalar(2026)),
+    E.gt(E.field("amount"), E.scalar(0.0))
+  )
+
+{:ok, scanner} =
+  ExArrow.Dataset.scanner(dataset, columns: ["id", "amount"], filter: filter)
+
+{:ok, stream} = ExArrow.Scanner.to_stream(scanner)
+batches = Enum.to_list(stream)
+ExArrow.Stream.close(stream)
+ExArrow.Scanner.stats(stream)
+```
+
+Full guide: [guides/11_datasets.md](guides/11_datasets.md). Livebook:
+`livebook/06_datasets.livemd`.
+
+---
+
 ## Arrow compute kernels
 
 All operations run entirely in native memory. Results are new
@@ -1082,6 +1159,7 @@ HTML reports are written to `bench/output/` (gitignored).
 | `v070_stream_flow_pipeline_bench.exs` | Parquet/IPC stream drains, Flow execution, Pipeline map_batches + write_parquet at 1K/100K/1M rows |
 | `v070_record_batch_vs_maps_bench.exs` | Arrow `RecordBatch` vs `list(map())` for build, transform, and drain at 1K/100K/1M rows |
 | `parquet_pushdown_bench.exs` | Pushdown filter vs full read + project (v0.8.0 rough timing helper) |
+| `dataset_scan_bench.exs` | Dataset pushdown ladder: full / project / partition / row-group / residual (v0.9.0) |
 
 
 ### Published results
@@ -1106,6 +1184,7 @@ The CI workflow posts a PR alert comment when any scenario regresses more than
 - [Arrow and GenStage](guides/08_arrow_and_genstage.md) — demand-driven producers with backpressure
 - [Arrow and Broadway](guides/09_arrow_and_broadway.md) — ingestion pipelines with `BatchBuilder` and sinks
 - [Arrow Pipeline Patterns](guides/10_arrow_pipeline_patterns.md) — composable `ExArrow.Pipeline` transforms and sinks
+- [Datasets and Scanners](guides/11_datasets.md) — Dataset, Fragment, Hive partitioning, Scanner pushdown ladder
 - [Memory model](docs/memory_model.md) — handles, copying rules, NIF scheduling
 - [IPC guide](docs/ipc_guide.md) — stream vs file, types, limitations
 - [Parquet guide](docs/parquet_guide.md) — read/write Parquet, streaming, comparison with IPC
@@ -1302,6 +1381,18 @@ welcome for any of them.
 - **Public IPC/RecordBatch helpers** — `IPC.File.write/3`, `RecordBatch.concat/1`.
 - **Docs / CI** — Parquet Livebook, Mix.install smoke, Livebook pin checks;
   optional arrow-testing corpus (local / workflow_dispatch).
+
+### Shipped (v0.9.0)
+
+- **Dataset / Fragment / Hive discovery** — `Dataset.open/2` over Local or
+  Memory filesystems; typed Hive partition values; schema from footer.
+- **Scanner** — partition prune, Parquet pushdown, residual Expression filter;
+  `:dataset` stream backend; exact `Scanner.stats/1`.
+- **`ExArrow.Compute.Expression`** — builders, schema validate, pushable vs
+  residual compile; `Compute.filter/2` residual NIF.
+- **`RecordBatch.from_lists/1` / `from_map/1`** — list/map batch construction.
+- **arrow-rs 59.3.0** — coordinated parquet / Flight / ADBC companion bumps.
+- **Docs** — Datasets guide, Livebook 06, dataset scan bench.
 
 ### Longer-term
 

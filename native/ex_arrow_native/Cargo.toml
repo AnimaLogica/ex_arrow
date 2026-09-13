@@ -1,6 +1,6 @@
 [package]
 name = "ex_arrow_native"
-version = "0.8.0"
+version = "0.9.0"
 edition = "2021"
 description = "Apache Arrow NIFs for ExArrow Elixir library"
 license = "Apache-2.0"
@@ -12,24 +12,24 @@ crate-type = ["cdylib"]
 
 [dependencies]
 rustler = { version = "0.37", default-features = false, features = ["derive"] }
-arrow = { version = "56", default-features = false, features = ["ipc", "ffi"] }
-arrow-ipc = "56"
-arrow-schema = { version = "56", default-features = false }
-arrow-array = { version = "56", default-features = false }
-arrow-buffer = { version = "56", default-features = false }
-arrow-data = { version = "56", default-features = false }
-arrow-select = { version = "56", default-features = false }
-arrow-ord = { version = "56", default-features = false }
-arrow-arith = { version = "56", default-features = false }
-parquet = { version = "56", default-features = false, features = ["arrow", "snap", "zstd", "lz4", "flate2-zlib-rs"] }
-arrow-flight = { version = "56", features = ["flight-sql"] }
+arrow = { version = "59", default-features = false, features = ["ipc", "ffi"] }
+arrow-ipc = "59"
+arrow-schema = { version = "59", default-features = false }
+arrow-array = { version = "59", default-features = false }
+arrow-buffer = { version = "59", default-features = false }
+arrow-data = { version = "59", default-features = false }
+arrow-select = { version = "59", default-features = false }
+arrow-ord = { version = "59", default-features = false }
+arrow-arith = { version = "59", default-features = false }
+parquet = { version = "59", default-features = false, features = ["arrow", "snap", "zstd", "lz4", "flate2-zlib-rs"] }
+arrow-flight = { version = "59", features = ["flight-sql"] }
 futures = "0.3"
 tokio = { version = "1", features = ["rt-multi-thread", "net", "sync", "time", "macros"] }
 tokio-stream = "0.1"
-tonic = { version = "0.13", features = ["tls-ring", "tls-native-roots"] }
+tonic = { version = "0.14", features = ["tls-ring", "tls-native-roots"] }
 bytes = "1"
-adbc_driver_manager = "0.22"
-adbc_core = "0.22"
+adbc_driver_manager = "0.24"
+adbc_core = "0.24"
 
 # Default to lowest NIF version we support so CI can build 2.15 (no extra flag) and 2.16 (action adds --features nif_version_2_16).
 [features]

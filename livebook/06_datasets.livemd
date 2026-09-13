@@ -1,0 +1,182 @@
+# ExArrow — Datasets and Scanners (v0.9)
+
+```elixir
+deps = [
+  {:pythonx, "~> 0.4.2"},
+  {:kino_pythonx, "~> 0.1.0"},
+  {:kino, "~> 0.19.0"}
+]
+
+# Opened from livebook/ in the repo → local source; otherwise Hex (precompiled NIF).
+local? = File.exists?(Path.join(__DIR__, "../native/ex_arrow_native/Cargo.toml"))
+
+{ex_arrow_dep, extra_deps, config} =
+  if local? do
+    System.put_env("EX_ARROW_BUILD", "1")
+
+    ex_arrow_beam = Path.join(__DIR__, "../_build/dev/lib/ex_arrow/ebin")
+
+    if File.dir?(ex_arrow_beam) do
+      File.rm_rf!(ex_arrow_beam)
+    end
+
+    {
+      {:ex_arrow, path: Path.expand("..", __DIR__)},
+      [{:rustler, "~> 0.36", optional: true}],
+      [rustler_precompiled: [force_build: [ex_arrow: true]]]
+    }
+  else
+    {
+      {:ex_arrow, "~> 0.9.0"},
+      [],
+      []
+    }
+  end
+
+Mix.install(deps ++ [ex_arrow_dep] ++ extra_deps, config: config)
+```
+
+```pyproject.toml
+[project]
+name = "project"
+version = "0.0.0"
+requires-python = "==3.13.*"
+dependencies = ["pyarrow"]
+```
+
+## Overview
+
+This notebook mirrors PyArrow `dataset` discovery + scan with ExArrow:
+
+* Hive-partitioned directory open
+* Expression filters with partition prune + Parquet pushdown
+* Scanner stats (exact fragment / row-group counts)
+* Projection via `:columns`
+
+Run cells **top to bottom**. Prefer the checked-in fixture under
+`test/fixtures/hive_events` when working from a git clone.
+
+---
+
+## Locate the fixture (or write a tiny Hive tree)
+
+```elixir
+repo_fixture =
+  Path.expand("../test/fixtures/hive_events", __DIR__)
+
+root =
+  if File.dir?(repo_fixture) do
+    repo_fixture
+  else
+    dir = Path.join(System.tmp_dir!(), "ex_arrow_hive_demo")
+    File.rm_rf!(dir)
+
+    {:ok, batch} =
+      ExArrow.RecordBatch.from_lists([
+        {"id", :s64, [1, 2]},
+        {"amount", :f64, [10.0, 100.0]},
+        {"account_id", :utf8, ["a", "b"]}
+      ])
+
+    schema = ExArrow.RecordBatch.schema(batch)
+
+    for {rel, ids, amounts} <- [
+          {"year=2025/month=12/part-0.parquet", [1], [10.0]},
+          {"year=2026/month=01/part-0.parquet", [2], [100.0]}
+        ] do
+      {:ok, b} =
+        ExArrow.RecordBatch.from_lists([
+          {"id", :s64, ids},
+          {"amount", :f64, amounts},
+          {"account_id", :utf8, List.duplicate("a", length(ids))}
+        ])
+
+      path = Path.join(dir, rel)
+      File.mkdir_p!(Path.dirname(path))
+      :ok = ExArrow.Parquet.Writer.to_file(path, schema, [b])
+    end
+
+    dir
+  end
+
+{root, File.ls!(root)}
+```
+
+---
+
+## PyArrow: open + filter
+
+```python
+import pyarrow.dataset as ds
+
+hive_root = root.decode("utf-8") if isinstance(root, (bytes, bytearray)) else root
+
+dataset = ds.dataset(hive_root, format="parquet", partitioning="hive")
+table = dataset.to_table(filter=(ds.field("year") >= 2026) & (ds.field("amount") > 50), columns=["id", "amount"])
+{"rows": table.num_rows, "ids": table.column("id").to_pylist()}
+```
+
+---
+
+## ExArrow: Dataset + Scanner
+
+```elixir
+alias ExArrow.Compute.Expression, as: E
+
+{:ok, dataset} =
+  ExArrow.Dataset.open(root,
+    partitioning: {:hive, schema: [{"year", :int32}, {"month", :int32}]}
+  )
+
+filter =
+  E.and_(
+    E.gte(E.field("year"), E.scalar(2026)),
+    E.gt(E.field("amount"), E.scalar(50.0))
+  )
+
+{:ok, scanner} =
+  ExArrow.Dataset.scanner(dataset, columns: ["id", "amount"], filter: filter)
+
+{:ok, stream} = ExArrow.Scanner.to_stream(scanner)
+batches = Enum.to_list(stream)
+stats = ExArrow.Scanner.stats(stream)
+:ok = ExArrow.Stream.close(stream)
+
+%{
+  fragments: length(ExArrow.Dataset.fragments(dataset)),
+  batches: length(batches),
+  rows: Enum.map(batches, &ExArrow.RecordBatch.num_rows/1) |> Enum.sum(),
+  stats: stats
+}
+```
+
+On the checked-in fixture, expect one emitted row (`id = 5`), one fragment
+pruned by year, and exact row-group skip counts in `stats`.
+
+---
+
+## Expression vs legacy tuple
+
+```elixir
+# Fully pushable data predicate as a legacy tuple (still supported):
+{:ok, scanner2} =
+  ExArrow.Dataset.scanner(dataset, filter: {:gt, "amount", 0.0})
+
+{:ok, stream2} = ExArrow.Scanner.to_stream(scanner2)
+rows2 =
+  stream2
+  |> Enum.to_list()
+  |> Enum.map(&ExArrow.RecordBatch.num_rows/1)
+  |> Enum.sum()
+
+:ok = ExArrow.Stream.close(stream2)
+%{rows_amount_gt_0: rows2}
+```
+
+Prefer `ExArrow.Compute.Expression` when the filter mixes partition keys,
+`not_/1`, or anything that needs a residual after Parquet pushdown.
+
+## See also
+
+* Guide: `guides/11_datasets.md`
+* Parquet pushdown notebook: `livebook/05_parquet.livemd`

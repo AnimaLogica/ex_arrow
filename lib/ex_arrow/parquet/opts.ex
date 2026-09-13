@@ -1,6 +1,8 @@
 defmodule ExArrow.Parquet.Opts do
   @moduledoc false
 
+  alias ExArrow.Compute.Expression
+
   @read_keys [:columns, :row_groups, :filters]
   @write_keys [:compression, :row_group_size, :dictionary]
   # `:uncompressed` is accepted as a synonym for `:none`.
@@ -93,6 +95,25 @@ defmodule ExArrow.Parquet.Opts do
   defp validate_row_groups(_), do: {:error, ":row_groups must be a list of integers"}
 
   defp validate_filters(nil), do: {:ok, nil}
+
+  defp validate_filters(%Expression{} = expr) do
+    case Expression.to_parquet_filters(expr) do
+      {nil, _residual} ->
+        {:error,
+         ":filters expression has no Parquet-pushable part (use Scanner for residual-only filters)"}
+
+      {pushed, nil} ->
+        case check_filter(pushed) do
+          :ok -> {:ok, pushed}
+          {:error, _} = err -> err
+        end
+
+      {_pushed, %Expression{} = residual} ->
+        {:error,
+         ":filters expression has a non-pushable residual (#{Expression.to_string(residual)}); " <>
+           "pass only pushable predicates to Parquet.Reader, or use Dataset.Scanner"}
+    end
+  end
 
   defp validate_filters(expr) do
     case check_filter(expr) do

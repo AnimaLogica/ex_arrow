@@ -110,6 +110,11 @@ defmodule ExArrow.NativeTest do
     end
 
     @tag :no_nif
+    test "compute_filter_expr/2 raises nif_not_loaded" do
+      assert_raise ErlangError, fn -> ExArrow.Native.compute_filter_expr(:fake, :fake) end
+    end
+
+    @tag :no_nif
     test "adbc_database_open/1 raises nif_not_loaded" do
       assert_raise ErlangError, fn -> ExArrow.Native.adbc_database_open("fake.so") end
     end

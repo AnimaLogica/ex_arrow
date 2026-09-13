@@ -131,6 +131,17 @@ MIX_ENV=dev mix run bench/parquet_pushdown_bench.exs
 It prints elapsed milliseconds and the row-group selection stats after open.
 Not part of `bench/run_all.exs` (no HTML/JSON output).
 
+### v0.9.0 Dataset scan ladder (`bench/dataset_scan_bench.exs`)
+
+Standalone `:timer.tc/1` helper over a synthetic Hive layout (8 partitions,
+1.2M rows). Labels state exactly what each branch measures: full scan,
+projection-only, partition-pruned, row-group-pruned, and expression-residual.
+Not part of `bench/run_all.exs` (writes under `/tmp`, longer runtime).
+
+```bash
+MIX_ENV=dev mix run bench/dataset_scan_bench.exs
+```
+
 ## Published results
 
 Benchmark results from every push to `main` are stored in the `gh-pages`

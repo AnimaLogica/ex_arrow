@@ -67,9 +67,9 @@ fn parse_tls_mode<'a>(term: Term<'a>) -> Result<TlsMode, String> {
         if atom == system_certs() {
             return Ok(TlsMode::SystemCerts);
         }
-        return Err(format!(
-            "unknown tls_mode atom; expected :plaintext or :system_certs"
-        ));
+        return Err(
+            "unknown tls_mode atom; expected :plaintext or :system_certs".to_string(),
+        );
     }
 
     // Tuple path: {:custom_ca, pem_binary} ───────────────────────────────────
@@ -194,7 +194,7 @@ fn schema_ipc_bytes(schema: &SchemaRef) -> Result<Bytes, Status> {
     let msg: IpcMessage = SchemaAsIpc::new(schema, &IpcWriteOptions::default())
         .try_into()
         .map_err(|e| Status::internal(format!("schema IPC encode: {e}")))?;
-    Ok(Bytes::from(msg.0))
+    Ok(msg.0)
 }
 
 // ── Descriptor codec helpers ─────────────────────────────────────────────────
@@ -482,7 +482,7 @@ impl FlightService for EchoFlightService {
         let ticket_key = first
             .flight_descriptor
             .as_ref()
-            .and_then(|d| descriptor_to_key(d))
+            .and_then(descriptor_to_key)
             .unwrap_or_else(|| String::from_utf8_lossy(ECHO_TICKET).into_owned());
 
         // Re-prepend the first message and decode all batches.
@@ -649,7 +649,7 @@ pub fn flight_server_start<'a>(
                     return;
                 }
             };
-            let local = listener.local_addr().unwrap_or_else(|_| addr);
+            let local = listener.local_addr().unwrap_or(addr);
             let actual_port = local.port();
             let actual_host = local.ip().to_string();
             let incoming = TcpListenerStream::new(listener);

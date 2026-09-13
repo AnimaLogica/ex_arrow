@@ -2,14 +2,16 @@ defmodule ExArrow.Stream do
   @moduledoc """
   Opaque handle to a native Arrow record-batch stream.
 
-  Provides a unified iterator interface over four backing sources:
+  Provides a unified iterator interface over five backing sources:
 
-  | Backend      | Created by                                                      |
-  |--------------|-----------------------------------------------------------------|
-  | `:ipc`       | `ExArrow.IPC.Reader` — Arrow IPC stream or file format          |
-  | `:parquet`   | `ExArrow.Parquet.Reader` — lazy row-group Parquet reader        |
-  | `:adbc`      | `ExArrow.ADBC.Statement.execute/1` — SQL result streams         |
-  | `:flight_sql`| `ExArrow.FlightSQL.Client.stream_query/2` — Flight SQL streams  |
+  | Backend         | Created by                                                      |
+  |-----------------|-----------------------------------------------------------------|
+  | `:ipc`          | `ExArrow.IPC.Reader` — Arrow IPC stream or file format          |
+  | `:parquet`      | `ExArrow.Parquet.Reader` — lazy row-group Parquet reader        |
+  | `:parquet_multi`| `ExArrow.Stream.from_parquet_files/2` — multi-file Parquet      |
+  | `:dataset`      | `ExArrow.Scanner.to_stream/1` — Dataset fragment scan           |
+  | `:adbc`         | `ExArrow.ADBC.Statement.execute/1` — SQL result streams         |
+  | `:flight_sql`   | `ExArrow.FlightSQL.Client.stream_query/2` — Flight SQL streams  |
 
   Plain Flight `do_get` results also use the `:ipc` backend (the Flight client
   returns an IPC stream resource).
@@ -64,7 +66,7 @@ defmodule ExArrow.Stream do
 
   @opaque t :: %__MODULE__{
             resource: reference() | pid() | nil,
-            backend: :ipc | :adbc | :parquet | :parquet_multi | :flight_sql,
+            backend: :ipc | :adbc | :parquet | :parquet_multi | :dataset | :flight_sql,
             source: term()
           }
   defstruct [:resource, :source, backend: :ipc]
@@ -222,13 +224,18 @@ defmodule ExArrow.Stream do
   @doc """
   Release resources held by a stream.
 
-  For `:parquet_multi` streams this stops the backing `Agent` (and drops the
-  open Parquet handle). Other backends are GC-safe and this is a no-op.
+  For `:parquet_multi` and `:dataset` streams this stops the backing `Agent`
+  (and drops any open file handle). Other backends are GC-safe and this is a
+  no-op.
   """
   @spec close(t()) :: :ok
   def close(%__MODULE__{resource: agent, backend: :parquet_multi}) do
     if Process.alive?(agent), do: Agent.stop(agent)
     :ok
+  end
+
+  def close(%__MODULE__{resource: agent, backend: :dataset}) do
+    ExArrow.Scanner.stream_close(agent)
   end
 
   def close(%__MODULE__{}), do: :ok
@@ -387,6 +394,10 @@ defmodule ExArrow.Stream do
     end
   end
 
+  def schema(%__MODULE__{resource: agent, backend: :dataset}) do
+    ExArrow.Scanner.stream_schema(agent)
+  end
+
   def schema(%__MODULE__{resource: ref, backend: :flight_sql}) do
     case native().flight_sql_stream_schema(ref) do
       {:error, msg} -> {:error, msg}
@@ -459,6 +470,14 @@ defmodule ExArrow.Stream do
               {:error, _} = err -> err
             end
         end
+    end
+  end
+
+  def next(%__MODULE__{resource: agent, backend: :dataset} = stream) do
+    case ExArrow.Scanner.stream_next(agent) do
+      :exhausted -> nil
+      {:error, _} = err -> err
+      {:ok, batch, path} -> emit_batch(%{stream | source: {:dataset, path}}, batch)
     end
   end
 

@@ -20,9 +20,12 @@ defmodule ExArrow.Compute do
 
   ## Building a boolean predicate for `filter/2`
 
-  `filter/2` expects the **first column** of a second record batch to be a
-  boolean Arrow array.  The most common source is a query result that already
-  contains a boolean column:
+  `filter/2` accepts either:
+
+  1. A **mask batch** whose first column is a boolean Arrow array, or
+  2. An `ExArrow.Compute.Expression` evaluated in native memory to a mask
+
+  Mask-batch example:
 
       # e.g. "SELECT id, score, is_active FROM users"
       {:ok, stream}  = ExArrow.ADBC.Statement.execute(stmt)
@@ -32,32 +35,59 @@ defmodule ExArrow.Compute do
       {:ok, mask}     = ExArrow.Compute.project(batch, ["is_active"])
       {:ok, filtered} = ExArrow.Compute.filter(batch, mask)
 
+  Expression example:
+
+      alias ExArrow.Compute.Expression, as: E
+
+      {:ok, filtered} =
+        ExArrow.Compute.filter(batch, E.gt(E.field("score"), E.scalar(0.9)))
+
   You can also write a Parquet/IPC file that contains a pre-computed boolean
   column and read it back as the predicate.
+
+  For analyzable predicates (Dataset / Parquet pushdown), see
+  `ExArrow.Compute.Expression`. Residual predicates that cannot be pushed
+  are evaluated with this same `filter/2` path after decode.
   """
 
+  alias ExArrow.Compute.Expression
   alias ExArrow.Native
   alias ExArrow.RecordBatch
 
   @doc """
-  Filter rows from `batch` using the first (boolean) column of `predicate_batch`.
+  Filter rows from `batch` using a boolean mask batch or an `Expression`.
 
-  `predicate_batch` must have at least one column and its first column must be
-  a boolean Arrow array with the same row count as `batch`.  Rows where the
-  predicate is `true` are kept; rows where it is `false` or `null` are dropped.
+  When `predicate` is a `RecordBatch`, its first column must be a boolean Arrow
+  array with the same row count as `batch`. Rows where the predicate is `true`
+  are kept; rows where it is `false` or `null` are dropped.
+
+  When `predicate` is an `ExArrow.Compute.Expression`, the expression is
+  evaluated in the NIF to a boolean mask and then applied the same way.
 
   Returns `{:ok, filtered_batch}` or `{:error, message}`.
 
-  ## Example
+  ## Examples
 
       # Keep only rows where "is_active" is true.
-      # batch has columns [id, score, is_active]; extract the bool column first.
       {:ok, mask}     = ExArrow.Compute.project(batch, ["is_active"])
       {:ok, filtered} = ExArrow.Compute.filter(batch, mask)
-      # filtered has the same columns as batch but only the rows where is_active = true
-  """
 
-  @spec filter(RecordBatch.t(), RecordBatch.t()) :: {:ok, RecordBatch.t()} | {:error, String.t()}
+      alias ExArrow.Compute.Expression, as: E
+      {:ok, filtered} =
+        ExArrow.Compute.filter(batch, E.gt(E.field("score"), E.scalar(0.9)))
+  """
+  @spec filter(RecordBatch.t(), RecordBatch.t() | Expression.t()) ::
+          {:ok, RecordBatch.t()} | {:error, String.t()}
+  def filter(batch, %Expression{} = expr) do
+    b = RecordBatch.resource_ref(batch)
+    encoded = Expression.encode_for_nif(expr)
+
+    case Native.compute_filter_expr(b, encoded) do
+      {:ok, ref} -> {:ok, RecordBatch.from_ref(ref)}
+      {:error, msg} -> {:error, msg}
+    end
+  end
+
   def filter(batch, predicate_batch) do
     b = RecordBatch.resource_ref(batch)
     p = RecordBatch.resource_ref(predicate_batch)

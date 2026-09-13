@@ -145,6 +145,7 @@ defmodule ExArrow.Native do
 
   # Compute kernels
   def compute_filter(_batch_ref, _predicate_ref), do: :erlang.nif_error(:nif_not_loaded)
+  def compute_filter_expr(_batch_ref, _encoded_expr), do: :erlang.nif_error(:nif_not_loaded)
   def compute_project(_batch_ref, _column_names), do: :erlang.nif_error(:nif_not_loaded)
   def compute_sort(_batch_ref, _column_name, _ascending), do: :erlang.nif_error(:nif_not_loaded)
 

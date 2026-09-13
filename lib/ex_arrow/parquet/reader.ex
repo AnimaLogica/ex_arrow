@@ -27,6 +27,12 @@ defmodule ExArrow.Parquet.Reader do
         {:and, [{:gte, "id", 10}, {:lt, "id", 100}]}
         {:or, [{:eq, "name", "alice"}, {:eq, "name", "bob"}]}
 
+    An `ExArrow.Compute.Expression` is also accepted here, but it must be
+    **fully** Parquet-pushable (`Expression.to_parquet_filters/1` returns a
+    tuple with `residual == nil`). Filters that need residual evaluation
+    (for example `not_/1`, temporal scalars, or mixed partition keys) must
+    use `ExArrow.Dataset.scanner/2` instead.
+
   Supported comparison ops: `:eq`, `:ne`, `:gt`, `:gte`, `:lt`, `:lte`.
   Values may be integers, floats, UTF-8 strings, or booleans.
 

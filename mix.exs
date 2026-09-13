@@ -1,7 +1,7 @@
 defmodule ExArrow.MixProject do
   use Mix.Project
 
-  @version "0.8.0"
+  @version "0.9.0"
   @source_url "https://github.com/thanos/ex_arrow"
 
   def project do
@@ -37,7 +37,7 @@ defmodule ExArrow.MixProject do
 
   defp package do
     [
-      description: "Apache Arrow support for the BEAM: IPC, Flight, ADBC bindings",
+      description: "Apache Arrow for the BEAM: IPC, Flight, ADBC, Parquet, Dataset/Scanner",
       licenses: ["MIT"],
       maintainers: ["Thanos Vassilakis"],
       links: %{
@@ -119,6 +119,7 @@ defmodule ExArrow.MixProject do
         "guides/08_arrow_and_genstage.md",
         "guides/09_arrow_and_broadway.md",
         "guides/10_arrow_pipeline_patterns.md",
+        "guides/11_datasets.md",
         "docs/overview.md",
         "docs/memory_model.md",
         "docs/ipc_guide.md",
@@ -135,7 +136,15 @@ defmodule ExArrow.MixProject do
         "Data interchange": [ExArrow.DataFrame, ExArrow.Schema.Mapper],
         IPC: [ExArrow.IPC.Reader, ExArrow.IPC.Writer, ExArrow.IPC.File],
         Parquet: [ExArrow.Parquet.Reader, ExArrow.Parquet.Writer, ExArrow.Parquet.Metadata],
-        "Compute kernels": [ExArrow.Compute],
+        "Compute kernels": [ExArrow.Compute, ExArrow.Compute.Expression],
+        Dataset: [
+          ExArrow.Dataset,
+          ExArrow.Dataset.Fragment,
+          ExArrow.Scanner,
+          ExArrow.FileSystem,
+          ExArrow.FileSystem.Local,
+          ExArrow.FileSystem.Memory
+        ],
         "Batch operations": [ExArrow.Batch],
         Pipeline: [
           ExArrow.Pipeline,

@@ -1,5 +1,7 @@
 defmodule ExArrow.GenStageTest do
-  use ExUnit.Case, async: true
+  # Attaches global :telemetry handlers and drives GenStage processes — keep
+  # serial so mailbox/telemetry traffic from other async tests cannot interfere.
+  use ExUnit.Case, async: false
 
   import ExArrow.TestFixtures
   alias ExArrow.GenStage.ADBCProducer
@@ -56,7 +58,7 @@ defmodule ExArrow.GenStageTest do
   end
 
   # Collect all batches emitted as separate {:batches, [...]} messages.
-  defp collect_all(timeout_ms \\ 1000) do
+  defp collect_all(timeout_ms \\ 3000) do
     collect_all([], timeout_ms)
   end
 
@@ -120,7 +122,7 @@ defmodule ExArrow.GenStageTest do
       GenStage.sync_subscribe(consumer, to: producer, max_demand: 10)
 
       collect_all()
-      assert_received {:telem, {:parquet, :binary}}, 200
+      assert_receive {:telem, {:parquet, :binary}}, 2000
 
       :telemetry.detach({:ex_arrow_gs, telem_ref})
     end

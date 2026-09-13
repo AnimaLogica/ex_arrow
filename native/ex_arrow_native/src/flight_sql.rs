@@ -416,7 +416,7 @@ pub fn flight_sql_query<'a>(
     // Step 1: GetFlightInfo → FlightInfo
     let flight_info = match rt.block_on(guard.execute(sql, None)) {
         Ok(info) => info,
-        Err(e) => return arrow_error_to_term(env, &e),
+        Err(e) => return flight_error_to_term(env, e),
     };
 
     // Step 2: Enforce single-endpoint constraint
@@ -445,7 +445,7 @@ pub fn flight_sql_query<'a>(
     // Step 5: DoGet → FlightRecordBatchStream (guard still held)
     let stream = match rt.block_on(guard.do_get(ticket)) {
         Ok(s) => s,
-        Err(e) => return arrow_error_to_term(env, &e),
+        Err(e) => return flight_error_to_term(env, e),
     };
     // Release the lock; the stream owns its own connection internally.
     drop(guard);
@@ -478,7 +478,7 @@ pub fn flight_sql_execute<'a>(
     match rt.block_on(guard.execute_update(sql, None)) {
         Ok(n) if n < 0 => (ok(), unknown()).encode(env),
         Ok(n) => (ok(), n as u64).encode(env),
-        Err(e) => arrow_error_to_term(env, &e),
+        Err(e) => flight_error_to_term(env, e),
     }
 }
 
@@ -568,7 +568,7 @@ fn flight_info_to_stream<'a>(
         };
         match rt.block_on(guard.do_get(ticket)) {
             Ok(s) => s,
-            Err(e) => return arrow_error_to_term(env, &e),
+            Err(e) => return flight_error_to_term(env, e),
         }
     };
 
@@ -617,7 +617,7 @@ pub fn flight_sql_get_tables<'a>(
         };
         match rt.block_on(guard.get_tables(cmd)) {
             Ok(info) => info,
-            Err(e) => return arrow_error_to_term(env, &e),
+            Err(e) => return flight_error_to_term(env, e),
         }
     };
 
@@ -650,7 +650,7 @@ pub fn flight_sql_get_db_schemas<'a>(
         };
         match rt.block_on(guard.get_db_schemas(cmd)) {
             Ok(info) => info,
-            Err(e) => return arrow_error_to_term(env, &e),
+            Err(e) => return flight_error_to_term(env, e),
         }
     };
 
@@ -679,7 +679,7 @@ pub fn flight_sql_get_sql_info<'a>(
         };
         match rt.block_on(guard.get_sql_info(vec![])) {
             Ok(info) => info,
-            Err(e) => return arrow_error_to_term(env, &e),
+            Err(e) => return flight_error_to_term(env, e),
         }
     };
 
@@ -715,7 +715,7 @@ pub fn flight_sql_prepare<'a>(
         };
         match rt.block_on(guard.prepare(sql, None)) {
             Ok(s) => s,
-            Err(e) => return arrow_error_to_term(env, &e),
+            Err(e) => return flight_error_to_term(env, e),
         }
     };
 
@@ -756,7 +756,7 @@ pub fn flight_sql_prepared_bind<'a>(
 
     match stmt.set_parameters(batch_ref.batch.clone()) {
         Ok(()) => ok_encode(env, rustler::types::atom::ok()),
-        Err(e) => arrow_error_to_term(env, &e),
+        Err(e) => flight_error_to_term(env, e),
     }
 }
 
@@ -789,7 +789,7 @@ pub fn flight_sql_prepared_parameter_schema<'a>(
             };
             ok_encode(env, ResourceArc::new(schema_ref))
         }
-        Err(e) => arrow_error_to_term(env, &e),
+        Err(e) => flight_error_to_term(env, e),
     }
 }
 
@@ -817,7 +817,7 @@ pub fn flight_sql_prepared_execute<'a>(
         };
         match rt.block_on(stmt.execute()) {
             Ok(info) => info,
-            Err(e) => return arrow_error_to_term(env, &e),
+            Err(e) => return flight_error_to_term(env, e),
         }
     };
 
@@ -847,7 +847,7 @@ pub fn flight_sql_prepared_execute_update<'a>(
     match rt.block_on(stmt.execute_update()) {
         Ok(n) if n < 0 => (ok(), unknown()).encode(env),
         Ok(n) => (ok(), n as u64).encode(env),
-        Err(e) => arrow_error_to_term(env, &e),
+        Err(e) => flight_error_to_term(env, e),
     }
 }
 
@@ -898,6 +898,6 @@ pub fn flight_sql_prepared_close<'a>(
     // ActionClosePreparedStatement to the server.
     match rt.block_on(stmt.close()) {
         Ok(()) => ok_encode(env, rustler::types::atom::ok()),
-        Err(e) => arrow_error_to_term(env, &e),
+        Err(e) => flight_error_to_term(env, e),
     }
 }

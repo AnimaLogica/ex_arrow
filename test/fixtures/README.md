@@ -21,6 +21,15 @@
   field indices; used to regression-test statistics pruning. Regenerate with
   PyArrow (two `write_table` calls so each becomes a row group).
 
+- **Hive-partitioned events (interop):** `hive_events/` is a small PyArrow
+  dataset under `year=*/month=*/part-0.parquet` with columns `id`, `amount`,
+  `account_id`. Used by Dataset/Scanner tests for exact partition prune and
+  row-group skip counts. Regenerate with:
+
+  ```sh
+  python3 script/generate_hive_events_fixture.py
+  ```
+
 - **Cross-language corpus (v0.8+):** optional suite under
   `test/fixtures/arrow_testing/` populated by
   `script/fetch_arrow_testing.sh` from

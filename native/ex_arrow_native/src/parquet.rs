@@ -331,7 +331,7 @@ fn build_writer_props(opts: &WriteOpts) -> WriterProperties {
         b = b.set_compression(c);
     }
     if let Some(n) = opts.row_group_size {
-        b = b.set_max_row_group_size(n);
+        b = b.set_max_row_group_row_count(Some(n));
     }
     if let Some(d) = opts.dictionary {
         b = b.set_dictionary_enabled(d);
@@ -952,7 +952,6 @@ fn encode_metadata<'a>(env: Env<'a>, metadata: &parquet::file::metadata::Parquet
             };
             let encoding_names: Vec<String> = col
                 .encodings()
-                .iter()
                 .map(|e| format!("{e:?}"))
                 .collect();
             let col_map = rustler::types::map::map_new(env);
