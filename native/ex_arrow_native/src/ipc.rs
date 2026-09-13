@@ -493,11 +493,11 @@ fn extract_primitive_buffer<'a>(env: Env<'a>, array: &ArrayRef) -> Term<'a> {
             };
             let len = bool_arr.len();
             let mut byte_buf = vec![0u8; len];
-            for i in 0..len {
-                // is_null check ensures null slots emit 0 instead of the
-                // unspecified backing bit that value(i) returns.
+            // is_null check ensures null slots emit 0 instead of the
+            // unspecified backing bit that value(i) returns.
+            for (i, slot) in byte_buf.iter_mut().enumerate() {
                 if !bool_arr.is_null(i) && bool_arr.value(i) {
-                    byte_buf[i] = 1;
+                    *slot = 1;
                 }
             }
             let mut owned = match rustler::OwnedBinary::new(len) {

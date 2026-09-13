@@ -100,9 +100,10 @@ The `package` in `mix.exs` already includes `checksum-*.exs`, so this file will 
 ## Compatibility notes
 
 - **Apache Arrow / Flight**
-  - `arrow`, `arrow-ipc`, `arrow-schema`, `arrow-array`, `arrow-flight`: version **56**.
+  - `arrow`, `arrow-ipc`, `arrow-schema`, `arrow-array`, `arrow-flight`,
+    `parquet`: version **59** (v0.9.0; previously 56).
 - **ADBC**
-  - `adbc_core` and `adbc_driver_manager`: version **0.22**.
+  - `adbc_core` and `adbc_driver_manager`: version **0.24**.
 - **BEAM**
   - Designed for Elixir `~> 1.14`; CI exercises Elixir 1.18/OTP 27,
     1.19/OTP 28, and 1.20/OTP 29.

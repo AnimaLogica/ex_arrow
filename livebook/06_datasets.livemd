@@ -27,7 +27,7 @@ local? = File.exists?(Path.join(__DIR__, "../native/ex_arrow_native/Cargo.toml")
     }
   else
     {
-      {:ex_arrow, "~> 0.8.0"},
+      {:ex_arrow, "~> 0.9.0"},
       [],
       []
     }

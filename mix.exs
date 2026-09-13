@@ -1,7 +1,7 @@
 defmodule ExArrow.MixProject do
   use Mix.Project
 
-  @version "0.8.0"
+  @version "0.9.0"
   @source_url "https://github.com/thanos/ex_arrow"
 
   def project do
@@ -37,7 +37,7 @@ defmodule ExArrow.MixProject do
 
   defp package do
     [
-      description: "Apache Arrow support for the BEAM: IPC, Flight, ADBC bindings",
+      description: "Apache Arrow for the BEAM: IPC, Flight, ADBC, Parquet, Dataset/Scanner",
       licenses: ["MIT"],
       maintainers: ["Thanos Vassilakis"],
       links: %{

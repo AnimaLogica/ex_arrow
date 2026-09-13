@@ -10,6 +10,10 @@ schema + batches pattern on the write side.
 > `ExArrow.Parquet.Metadata`, and multi-file streams
 > (`from_parquet_files/2`, `from_parquet_dir/2`). Preferred entry point:
 > `ExArrow.Stream.from_parquet/2`.
+>
+> **v0.9.0**: for Hive-partitioned trees and Expression filters that need a
+> residual, prefer `ExArrow.Dataset` / `ExArrow.Scanner` (see the
+> [Datasets guide](../guides/11_datasets.md)).
 
 ---
 

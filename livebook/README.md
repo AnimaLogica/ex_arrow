@@ -28,7 +28,7 @@ Together they demonstrate ExArrow functionality: IPC (stream + file), Flight (cl
 | Where you open the notebook | `ex_arrow` source |
 |----------------------------|-------------------|
 | From `livebook/` in a git clone | Local path + `EX_ARROW_BUILD=1` (compile NIF from Rust) |
-| From Livebook autosave or elsewhere | Hex `~> 0.8.0` (precompiled NIF, no Rust) |
+| From Livebook autosave or elsewhere | Hex `~> 0.9.0` (precompiled NIF, no Rust) |
 
 ### ADBC in Livebook
 

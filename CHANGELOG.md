@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-09-13
+
+### Added
+
+- **`ExArrow.Dataset` / `ExArrow.Dataset.Fragment`**: discover Parquet or IPC
+  trees from a directory, single file, glob, or explicit path list via
+  `Dataset.open/2`. Hive partitioning parses typed keys from path segments;
+  each fragment carries `path`, `format`, `size`, and `partition_values`.
+  Schema is resolved from the first fragment footer without decoding pages.
+- **`ExArrow.FileSystem`**: behaviour with `Local` (OS) and `Memory`
+  (in-process tree) backends for list/glob/exists used by Dataset discovery.
+- **`ExArrow.Scanner`**: lazy scan plan from `Dataset.scanner/2` with
+  `:columns`, `:filter`, and `:batch_size`. `Scanner.to_stream/1` yields an
+  Agent-backed `:dataset` stream; `Scanner.stats/1` reports exact fragment
+  and row-group prune counts (preview before IO, or live after scan). Closed
+  streams return `{:error, "stream is closed"}` instead of exiting.
+- **`ExArrow.Compute.Expression`**: analyzable filter AST with `field/1`,
+  `scalar/1`, comparisons, `and_/2`, `or_/2`, `not_/1`, plus `validate/2`,
+  `to_string/1`, and `to_parquet_filters/1` (pushable subset vs residual).
+  Temporal scalars (`Date`, `NaiveDateTime`, `DateTime`) are supported for
+  residual evaluation.
+- **Residual `Compute.filter/2`**: new NIF evaluates an Expression to a
+  boolean mask and filters a `RecordBatch` (also via `Batch.filter/2`).
+  Integer→float casts reject values that are not exactly representable.
+- **`RecordBatch.from_lists/1` and `from_map/1`**: ergonomic constructors
+  for non-nullable columnar batches from Elixir lists/maps.
+- **Docs / fixtures**: Datasets guide (`guides/11_datasets.md`), Livebook
+  `06_datasets.livemd`, PyArrow Hive fixture with exact Scanner prune
+  stats, and `bench/dataset_scan_bench.exs` (labeled pushdown ladder).
+
+### Changed
+
+- **Native stack**: arrow-rs / parquet / arrow-flight **59.3.0** (from 56);
+  tonic **0.14**; adbc_core / adbc_driver_manager **0.24**.
+- **Parquet `:filters`**: continues to accept the v0.8.0 tuple AST; an
+  `Expression` is accepted only when fully Parquet-pushable (use Scanner
+  when a residual remains).
+- Cross-fragment Scanner schema checks compare **name and type** (not names
+  alone). Dataset fragment list building uses linear prepend/reverse
+  accumulation.
+
 ## [0.8.0] - 2026-08-21
 
 ### Added
