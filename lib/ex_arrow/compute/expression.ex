@@ -149,17 +149,22 @@ defmodule ExArrow.Compute.Expression do
   Checks that field names exist and that comparisons are type-compatible
   with the referenced column (and the other side, when both are fields).
   """
-  @spec validate(t(), Schema.t()) :: {:ok, t()} | {:error, String.t()}
+  @spec validate(t(), Schema.t() | %{optional(String.t()) => term()}) ::
+          {:ok, t()} | {:error, String.t()}
+  def validate(%__MODULE__{} = expr, %{} = fields) when not is_struct(fields) do
+    case validate_node(expr.node, fields) do
+      :ok -> {:ok, expr}
+      {:error, _} = err -> err
+    end
+  end
+
   def validate(%__MODULE__{} = expr, schema) do
     fields =
       schema
       |> Schema.fields()
       |> Map.new(fn f -> {f.name, f.type} end)
 
-    case validate_node(expr.node, fields) do
-      :ok -> {:ok, expr}
-      {:error, _} = err -> err
-    end
+    validate(expr, fields)
   end
 
   @doc """

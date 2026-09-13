@@ -27,6 +27,7 @@ defmodule ExArrow.Telemetry do
   | `[:ex_arrow, :flight_sql, :query]` | A Flight SQL query stream is opened      |
   | `[:ex_arrow, :parquet, :read]`     | A Parquet reader stream is opened        |
   | `[:ex_arrow, :parquet, :write]`    | Batches are written to Parquet           |
+  | `[:ex_arrow, :dataset, :scan]`     | Dataset scanner span (`:start` / `:stop`)|
   | `[:ex_arrow, :stream, :batch]`     | A single batch is yielded from a stream  |
   | `[:ex_arrow, :pipeline, :batch]`   | A pipeline stage processes a batch       |
 

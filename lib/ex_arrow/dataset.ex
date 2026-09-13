@@ -128,6 +128,16 @@ defmodule ExArrow.Dataset do
   @spec schema(t()) :: Schema.t()
   def schema(%__MODULE__{schema: schema}), do: schema
 
+  @doc """
+  Build a lazy `ExArrow.Scanner` over this dataset (no IO).
+
+  See `ExArrow.Scanner.new/2` for options (`:columns`, `:filter`, `:batch_size`).
+  """
+  @spec scanner(t(), keyword()) :: {:ok, ExArrow.Scanner.t()} | {:error, String.t()}
+  def scanner(%__MODULE__{} = dataset, opts \\ []) when is_list(opts) do
+    ExArrow.Scanner.new(dataset, opts)
+  end
+
   # --- options --------------------------------------------------------------
 
   defp validate_opts_keys(opts) do
