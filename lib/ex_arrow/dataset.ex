@@ -2,12 +2,13 @@ defmodule ExArrow.Dataset do
   @moduledoc """
   Dataset discovery over Parquet (and IPC) files.
 
-  A Dataset is a discovered set of fragments — usually files under a directory,
-  optionally with Hive partition values parsed from the path. Scanning is
-  handled by `ExArrow.Scanner` (v0.9.0 M5); this module only discovers and
-  describes fragments.
+  A Dataset is the result of finding files and describing them as fragments.
+  It does **not** decode row groups. Use `ExArrow.Scanner` to project, filter,
+  and stream batches.
 
-  ## Example
+  ## Typical workflow
+
+      alias ExArrow.Compute.Expression, as: E
 
       {:ok, dataset} =
         ExArrow.Dataset.open("/data/events",
@@ -15,26 +16,45 @@ defmodule ExArrow.Dataset do
           partitioning: {:hive, schema: [{"year", :int32}, {"month", :int32}]}
         )
 
-      ExArrow.Dataset.fragments(dataset)
-      ExArrow.Dataset.schema(dataset)
+      fragments = ExArrow.Dataset.fragments(dataset)
+      schema = ExArrow.Dataset.schema(dataset)
 
-  ## Sources
+      filter =
+        E.and_(
+          E.gte(E.field("year"), E.scalar(2026)),
+          E.gt(E.field("amount"), E.scalar(0.0))
+        )
 
-  `open/2` accepts:
+      {:ok, scanner} =
+        ExArrow.Dataset.scanner(dataset, columns: ["id", "amount"], filter: filter)
 
-  - a directory path (recursive discovery)
-  - a single file path
-  - a glob pattern (`*` / `**`)
-  - an explicit list of file paths
+      {:ok, stream} = ExArrow.Scanner.to_stream(scanner)
+      batches = Enum.to_list(stream)
+      :ok = ExArrow.Stream.close(stream)
 
-  ## Options
+  ## Sources for `open/2`
+
+  - a **directory** path (recursive discovery of matching files)
+  - a **single file** path
+  - a **glob** pattern (`*` within a segment, `**` across segments)
+  - an explicit **list** of file paths
+
+  ## Options for `open/2`
 
     * `:format` — `:parquet` (default) or `:ipc`
-    * `:partitioning` — `:none` (default) or `{:hive, schema: [{name, type}, ...]}`
-    * `:filesystem` — `ExArrow.FileSystem` handle (default `FileSystem.Local.new()`)
-    * `:ignore_hidden` — skip `.` / `_`-prefixed path components (default `true`)
-    * `:schema` — optional `ExArrow.Schema` to skip footer schema resolution
-    * `:root` — dataset root for Hive relative paths (inferred when omitted)
+    * `:partitioning` — `:none` (default) or
+      `{:hive, schema: [{name, type}, ...]}` (see `t:partition_schema/0`)
+    * `:filesystem` — `ExArrow.FileSystem` handle (default
+      `ExArrow.FileSystem.Local.new/0`)
+    * `:ignore_hidden` — skip path components whose basename starts with
+      `.` or `_` (default `true`)
+    * `:schema` — optional `ExArrow.Schema.t()` to skip footer / IPC schema
+      resolution (required for Memory-only discovery when paths are not
+      OS-readable)
+    * `:root` — dataset root used when parsing Hive relative paths
+      (inferred from the source when omitted)
+
+  See also: `guides/11_datasets.md`, `livebook/06_datasets.livemd`.
   """
 
   alias ExArrow.Dataset.Fragment
@@ -49,7 +69,13 @@ defmodule ExArrow.Dataset do
   @enforce_keys [:format, :partitioning, :filesystem, :ignore_hidden, :root, :fragments, :schema]
   defstruct [:format, :partitioning, :filesystem, :ignore_hidden, :root, :fragments, :schema]
 
-  @typedoc "Arrow-ish type atom used when coercing Hive `key=value` path segments."
+  @typedoc """
+  Arrow-ish type atom used when coercing Hive `key=value` path segments.
+
+  Integers are range-checked for the named width. `:date32` accepts ISO-8601
+  date strings. `:utf8` URL-decodes the value. `:boolean` accepts
+  `true`/`false`/`1`/`0` (case-insensitive).
+  """
   @type partition_type ::
           :int8
           | :int16
@@ -65,12 +91,40 @@ defmodule ExArrow.Dataset do
           | :boolean
           | :date32
 
-  @typedoc "Ordered list of `{name, type}` pairs for `{:hive, schema: ...}`."
+  @typedoc """
+  Ordered list of `{column_name, type}` pairs for Hive partitioning.
+
+  Example: `[{"year", :int32}, {"month", :int32}]` matches paths like
+  `.../year=2026/month=01/part-0.parquet`.
+  """
   @type partition_schema :: [{String.t(), partition_type()}]
 
+  @typedoc """
+  How fragment paths contribute partition columns.
+
+    * `:none` — no path parsing; every fragment has `partition_values: %{}`
+    * `{:hive, schema}` — parse `key=value` segments under the dataset root
+      using `schema` (see `t:partition_schema/0`)
+  """
   @type partitioning :: :none | {:hive, partition_schema()}
+
+  @typedoc "On-disk format of every fragment in this dataset."
   @type format :: :parquet | :ipc
 
+  @typedoc """
+  A discovered Dataset.
+
+  ## Fields
+
+    * `:format` — `:parquet` or `:ipc` (from `open/2`)
+    * `:partitioning` — `:none` or `{:hive, schema}` used at open time
+    * `:filesystem` — discovery backend (`Local` or `Memory`)
+    * `:ignore_hidden` — whether hidden path components were skipped
+    * `:root` — root path for Hive relative parsing (often absolute on Local)
+    * `:fragments` — path-sorted `ExArrow.Dataset.Fragment` list
+    * `:schema` — Arrow schema from the first fragment footer / IPC metadata,
+      or the caller-supplied `:schema` option
+  """
   @type t :: %__MODULE__{
           format: format(),
           partitioning: partitioning(),
@@ -85,6 +139,55 @@ defmodule ExArrow.Dataset do
 
   @doc """
   Discover fragments for `source` and resolve the dataset schema.
+
+  Performs discovery IO (list/glob/exists) and, unless `:schema` is passed,
+  opens the first fragment's footer (Parquet) or IPC file metadata. Does
+  **not** decode data pages.
+
+  ## Parameters
+
+    * `source` — directory, file path, glob string, or list of file paths
+    * `opts` — see the module documentation (format, partitioning, filesystem,
+      ignore_hidden, schema, root)
+
+  ## Returns
+
+    * `{:ok, dataset}` on success
+    * `{:error, message}` for validation failures, missing paths, empty
+      discovery, malformed Hive segments, or schema resolution errors
+
+  ## Examples
+
+  Open a Hive-partitioned directory:
+
+      {:ok, dataset} =
+        ExArrow.Dataset.open("/data/events",
+          partitioning: {:hive, schema: [{"year", :int32}, {"month", :int32}]}
+        )
+
+  Open an explicit file list with a known schema (no footer read):
+
+      {:ok, dataset} =
+        ExArrow.Dataset.open(
+          ["/data/a.parquet", "/data/b.parquet"],
+          schema: schema,
+          root: "/data"
+        )
+
+  Discover via Memory filesystem (tests):
+
+      {:ok, fs} =
+        ExArrow.FileSystem.Memory.new(%{
+          "/data/year=2026/part-0.parquet" => 128
+        })
+
+      {:ok, dataset} =
+        ExArrow.Dataset.open("/data",
+          filesystem: fs,
+          schema: schema,
+          partitioning: {:hive, schema: [{"year", :int32}]},
+          root: "/data"
+        )
   """
   @spec open(String.t() | [String.t()], keyword()) :: {:ok, t()} | {:error, String.t()}
   def open(source, opts \\ [])
@@ -117,21 +220,75 @@ defmodule ExArrow.Dataset do
   def open(_source, _opts), do: {:error, "source must be a path string or a list of paths"}
 
   @doc """
-  Return discovered fragments in path-sorted order.
+  Return discovered fragments in lexicographic path order.
+
+  ## Parameters
+
+    * `dataset` — an `ExArrow.Dataset.t()` from `open/2`
+
+  ## Examples
+
+      frags = ExArrow.Dataset.fragments(dataset)
+      Enum.map(frags, & &1.partition_values)
+      # => [%{"year" => 2025, "month" => 12}, %{"year" => 2026, "month" => 1}]
   """
   @spec fragments(t()) :: [Fragment.t()]
   def fragments(%__MODULE__{fragments: fragments}), do: fragments
 
   @doc """
-  Return the dataset schema resolved at open time (footer / IPC metadata only).
+  Return the Arrow schema resolved at open time.
+
+  Comes from the first fragment's Parquet footer / IPC file metadata, or from
+  the `:schema` option passed to `open/2`. No data pages are read.
+
+  ## Parameters
+
+    * `dataset` — an `ExArrow.Dataset.t()` from `open/2`
+
+  ## Examples
+
+      schema = ExArrow.Dataset.schema(dataset)
+      ExArrow.Schema.field_names(schema)
+      # => ["id", "amount", "account_id"]
   """
   @spec schema(t()) :: Schema.t()
   def schema(%__MODULE__{schema: schema}), do: schema
 
   @doc """
-  Build a lazy `ExArrow.Scanner` over this dataset (no IO).
+  Build a lazy `ExArrow.Scanner` over this dataset.
 
-  See `ExArrow.Scanner.new/2` for options (`:columns`, `:filter`, `:batch_size`).
+  Performs **no IO**. Validation of `:columns` / `:filter` / `:batch_size`
+  happens here; file opens start in `ExArrow.Scanner.to_stream/1`.
+
+  ## Parameters
+
+    * `dataset` — discovered dataset
+    * `opts` — scanner options:
+
+      * `:columns` — non-empty list of column name strings to project, or
+        omit for all columns
+      * `:filter` — `ExArrow.Compute.Expression.t()`, legacy Parquet filter
+        tuple (`{:gt, "col", value}`, `{:and, [...]}`, ...), or omit/`nil`
+      * `:batch_size` — positive integer accepted for API stability; reserved
+        in 0.9 (batches follow Parquet row-group sizing)
+
+  ## Returns
+
+    * `{:ok, scanner}` when options validate
+    * `{:error, message}` for unknown options, bad columns, or filter
+      validation failures (including unknown Expression fields)
+
+  ## Examples
+
+      alias ExArrow.Compute.Expression, as: E
+
+      {:ok, scanner} =
+        ExArrow.Dataset.scanner(dataset,
+          columns: ["id"],
+          filter: E.gte(E.field("year"), E.scalar(2026))
+        )
+
+      {:ok, stream} = ExArrow.Scanner.to_stream(scanner)
   """
   @spec scanner(t(), keyword()) :: {:ok, ExArrow.Scanner.t()} | {:error, String.t()}
   def scanner(%__MODULE__{} = dataset, opts \\ []) when is_list(opts) do

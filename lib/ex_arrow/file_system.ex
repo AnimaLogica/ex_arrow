@@ -20,25 +20,38 @@ defmodule ExArrow.FileSystem do
   starts with `.` or `_` is skipped. That matches Dataset's
   `:ignore_hidden` option (dotfiles and `_`-prefixed Hive / staging dirs).
 
-  ## Example
+  ## Typical usage
 
       fs = ExArrow.FileSystem.Local.new()
-      {:ok, entries} = ExArrow.FileSystem.list(fs, "/data/events")
+      {:ok, entries} = ExArrow.FileSystem.list(fs, "/data/events", recursive: true)
       {:ok, paths} = ExArrow.FileSystem.glob(fs, "/data/events/**/*.parquet")
       true = ExArrow.FileSystem.exists?(fs, "/data/events")
+
+      {:ok, dataset} = ExArrow.Dataset.open("/data/events", filesystem: fs)
   """
 
   @typedoc "Filesystem handle (struct whose module implements this behaviour)."
   @type t :: struct()
 
-  @typedoc "One discovered path."
+  @typedoc """
+  One discovered path.
+
+  ## Keys
+
+    * `:path` — absolute or normalized path string
+    * `:type` — `:file` or `:directory`
+    * `:size` — byte size for files; `0` for directories (and when unknown)
+  """
   @type entry :: %{
           path: String.t(),
           type: :file | :directory,
           size: non_neg_integer()
         }
 
+  @typedoc "Option for `list/3`."
   @type list_opt :: {:recursive, boolean()} | {:ignore_hidden, boolean()}
+
+  @typedoc "Option for `glob/3`."
   @type glob_opt :: {:ignore_hidden, boolean()}
 
   @callback list(t(), String.t(), keyword()) :: {:ok, [entry()]} | {:error, String.t()}
@@ -48,11 +61,26 @@ defmodule ExArrow.FileSystem do
   @doc """
   List entries under `path`.
 
-  ## Options
+  ## Parameters
 
-    * `:recursive` — when `true` (default), walk the whole tree; when `false`,
-      only immediate children
-    * `:ignore_hidden` — when `true` (default), skip `.` / `_`-prefixed names
+    * `fs` — filesystem handle (`Local` or `Memory`)
+    * `path` — directory or file to list
+    * `opts`:
+
+      * `:recursive` — when `true` (default), walk the whole tree; when
+        `false`, only immediate children
+      * `:ignore_hidden` — when `true` (default), skip `.` / `_`-prefixed names
+
+  ## Returns
+
+    * `{:ok, entries}` — list of `t:entry/0` maps, typically path-sorted
+    * `{:error, message}` — missing path, invalid opts, or backend failure
+
+  ## Examples
+
+      fs = ExArrow.FileSystem.Local.new()
+      {:ok, entries} = ExArrow.FileSystem.list(fs, "/data/events", recursive: false)
+      Enum.map(entries, &{&1.type, &1.path})
   """
   @spec list(t(), String.t(), [list_opt()]) :: {:ok, [entry()]} | {:error, String.t()}
   def list(fs, path, opts \\ [])
@@ -75,10 +103,24 @@ defmodule ExArrow.FileSystem do
   Patterns use `/` separators. `*` matches within one path segment; `**`
   matches across segments (including zero segments).
 
-  ## Options
+  ## Parameters
 
-    * `:ignore_hidden` — when `true` (default), skip matches with a `.` /
-      `_`-prefixed path component
+    * `fs` — filesystem handle
+    * `pattern` — glob string (for example `"/data/**/*.parquet"`)
+    * `opts`:
+
+      * `:ignore_hidden` — when `true` (default), skip matches with a `.` /
+        `_`-prefixed path component
+
+  ## Returns
+
+    * `{:ok, paths}` — sorted list of matching **file** paths
+    * `{:error, message}` — invalid pattern or opts
+
+  ## Examples
+
+      fs = ExArrow.FileSystem.Local.new()
+      {:ok, paths} = ExArrow.FileSystem.glob(fs, "/data/events/year=*/**/*.parquet")
   """
   @spec glob(t(), String.t(), [glob_opt()]) :: {:ok, [String.t()]} | {:error, String.t()}
   def glob(fs, pattern, opts \\ [])
@@ -97,6 +139,16 @@ defmodule ExArrow.FileSystem do
 
   @doc """
   Return whether `path` exists as a file or directory.
+
+  ## Parameters
+
+    * `fs` — filesystem handle
+    * `path` — path string (non-binaries return `false`)
+
+  ## Examples
+
+      fs = ExArrow.FileSystem.Local.new()
+      ExArrow.FileSystem.exists?(fs, "/data/events")
   """
   @spec exists?(t(), String.t()) :: boolean()
   def exists?(%mod{} = fs, path) when is_binary(path), do: mod.exists?(fs, path)

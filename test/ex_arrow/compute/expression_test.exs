@@ -1,6 +1,8 @@
 defmodule ExArrow.Compute.ExpressionTest do
   use ExUnit.Case, async: true
 
+  doctest ExArrow.Compute.Expression
+
   alias ExArrow.Compute.Expression, as: E
   alias ExArrow.Parquet.Opts
   alias ExArrow.RecordBatch

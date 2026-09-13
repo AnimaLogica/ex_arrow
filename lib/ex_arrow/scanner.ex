@@ -3,38 +3,60 @@ defmodule ExArrow.Scanner do
   Lazy scan of an `ExArrow.Dataset` with projection, partition pruning, and
   filter pushdown.
 
-  Building a scanner does no IO. `to_stream/1` starts an Agent-backed
-  `ExArrow.Stream` (`backend: :dataset`) that opens fragments on demand.
+  Building a scanner (`new/2` / `ExArrow.Dataset.scanner/2`) does **no IO**.
+  `to_stream/1` starts an Agent-backed `ExArrow.Stream` (`backend: :dataset`)
+  that opens fragments on demand in path-sorted order.
 
   ## Pushdown ladder
 
   1. **Partition pruning** — predicates on Hive keys are evaluated against
      each fragment's `partition_values` (no file open).
-  2. **Parquet filters** — remaining pushable predicates become
-     `Parquet.Reader` `:filters` (row-group stats).
-  3. **Residual** — anything left runs through `Compute.filter/2` after decode.
-     Partition fields in a residual expression are bound to scalars for the
-     current fragment.
+  2. **Parquet filters** — remaining pushable predicates on data columns
+     become `Parquet.Reader` `:filters` (row-group statistics). Hive keys are
+     stripped from this AST because they are not columns in the file.
+  3. **Residual** — anything left runs through `ExArrow.Compute.filter/2`
+     after decode. Partition fields in a residual expression are bound to
+     scalars for the current fragment.
 
   ## Options
 
-    * `:columns` — list of column names to project (Parquet pushdown / IPC project)
-    * `:filter` — `ExArrow.Compute.Expression`, legacy Parquet filter tuple, or `nil`
-    * `:batch_size` — accepted for API stability; reserved (row-group sized batches in 0.9)
+    * `:columns` — list of column names to project (Parquet pushdown / IPC
+      `Compute.project/2`)
+    * `:filter` — `ExArrow.Compute.Expression.t()`, legacy Parquet filter
+      tuple, or `nil`
+    * `:batch_size` — accepted for API stability; reserved in 0.9 (batches
+      follow Parquet row-group sizing)
 
-  ## Example
+  ## Typical usage
 
-      {:ok, dataset} = ExArrow.Dataset.open(root, partitioning: {:hive, schema: [...]})
-      {:ok, scanner} = ExArrow.Dataset.scanner(dataset,
-        columns: ["id"],
-        filter: ExArrow.Compute.Expression.gte(
-          ExArrow.Compute.Expression.field("year"),
-          ExArrow.Compute.Expression.scalar(2026)
+      alias ExArrow.Compute.Expression, as: E
+
+      {:ok, dataset} =
+        ExArrow.Dataset.open("/data/events",
+          partitioning: {:hive, schema: [{"year", :int32}, {"month", :int32}]}
         )
-      )
+
+      {:ok, scanner} =
+        ExArrow.Dataset.scanner(dataset,
+          columns: ["id", "amount"],
+          filter:
+            E.and_(
+              E.gte(E.field("year"), E.scalar(2026)),
+              E.gt(E.field("amount"), E.scalar(0.0))
+            )
+        )
+
+      # Optional: preview how many fragments survive partition prune (no IO)
+      preview = ExArrow.Scanner.stats(scanner)
+
       {:ok, stream} = ExArrow.Scanner.to_stream(scanner)
       batches = Enum.to_list(stream)
-      ExArrow.Stream.close(stream)
+      stats = ExArrow.Scanner.stats(stream)
+      :ok = ExArrow.Stream.close(stream)
+
+  Early `Enum.take/2` does not open later fragments. Call
+  `ExArrow.Stream.close/1` when abandoning a partially consumed scan from a
+  long-lived process.
   """
 
   alias ExArrow.Compute
@@ -54,6 +76,20 @@ defmodule ExArrow.Scanner do
   @enforce_keys [:dataset, :columns, :filter, :batch_size, :partition_keys]
   defstruct [:dataset, :columns, :filter, :batch_size, :partition_keys]
 
+  @typedoc """
+  Cumulative scan statistics.
+
+  ## Keys
+
+    * `:fragments_discovered` — fragments on the Dataset before prune
+    * `:fragments_pruned_partition` — dropped by Hive-key evaluation
+    * `:fragments_selected` — kept after partition prune
+    * `:fragments_scanned` — actually opened during `to_stream/1`
+    * `:row_groups_selected` / `:row_groups_skipped` — sums of
+      `Parquet.Reader.read_stats/1` across opened Parquet fragments
+    * `:rows_emitted` — rows yielded after residual filter (empty batches
+      are skipped and do not count)
+  """
   @type stats :: %{
           fragments_discovered: non_neg_integer(),
           fragments_pruned_partition: non_neg_integer(),
@@ -64,6 +100,18 @@ defmodule ExArrow.Scanner do
           rows_emitted: non_neg_integer()
         }
 
+  @typedoc """
+  A lazy scan plan over a Dataset.
+
+  ## Fields
+
+    * `:dataset` — source `ExArrow.Dataset.t()`
+    * `:columns` — projection list, or `nil` for all columns
+    * `:filter` — Expression, legacy filter tuple, or `nil`
+    * `:batch_size` — reserved positive integer, or `nil`
+    * `:partition_keys` — Hive column names used when compiling filters
+      (derived from the dataset partitioning schema)
+  """
   @type t :: %__MODULE__{
           dataset: Dataset.t(),
           columns: [String.t()] | nil,
@@ -73,7 +121,29 @@ defmodule ExArrow.Scanner do
         }
 
   @doc """
-  Build a lazy scanner over `dataset`. Performs no IO.
+  Build a lazy scanner over `dataset`.
+
+  Performs **no IO**. Prefer `ExArrow.Dataset.scanner/2`, which delegates here.
+
+  ## Parameters
+
+    * `dataset` — an `ExArrow.Dataset.t()`
+    * `opts` — keyword list:
+
+      * `:columns` — non-empty `[String.t()]` to project, or omit/`nil`
+      * `:filter` — `Expression.t()`, legacy tuple, or omit/`nil`
+      * `:batch_size` — positive integer (reserved; validated only)
+
+  ## Returns
+
+    * `{:ok, scanner}` when options validate against the dataset schema
+      (Expression fields may include Hive partition columns)
+    * `{:error, message}` for bad options or filter validation failures
+
+  ## Examples
+
+      {:ok, scanner} = ExArrow.Scanner.new(dataset, columns: ["id"])
+      {:ok, scanner} = ExArrow.Scanner.new(dataset, filter: {:gt, "amount", 0.0})
   """
   @spec new(Dataset.t(), keyword()) :: {:ok, t()} | {:error, String.t()}
   def new(dataset, opts \\ [])
@@ -97,8 +167,33 @@ defmodule ExArrow.Scanner do
   def new(_, _), do: {:error, "scanner requires an ExArrow.Dataset"}
 
   @doc """
-  Start scanning: partition-prune, then return an `ExArrow.Stream` with
-  `backend: :dataset`.
+  Start scanning: partition-prune, then return an `ExArrow.Stream`.
+
+  The stream has `backend: :dataset` and implements `Enumerable`. Fragments
+  open lazily; EOF is idempotent (`next/1` returns `nil` forever after
+  exhaustion).
+
+  ## Parameters
+
+    * `scanner` — from `new/2` / `Dataset.scanner/2`
+
+  ## Returns
+
+    * `{:ok, stream}` — Agent-backed stream; call `ExArrow.Stream.close/1`
+      when done or when abandoning early
+    * `{:error, message}` — filter compile / Parquet opts validation failure
+
+  ## Examples
+
+      {:ok, stream} = ExArrow.Scanner.to_stream(scanner)
+      batch = ExArrow.Stream.next(stream)
+      batches = Enum.to_list(stream)
+      :ok = ExArrow.Stream.close(stream)
+
+  Telemetry: emits `[:ex_arrow, :dataset, :scan, :start]` here and
+  `[:ex_arrow, :dataset, :scan, :stop]` when the scan finishes or is closed.
+  Per-batch events use `[:ex_arrow, :stream, :batch]` with
+  `source: {:dataset, current_fragment_path}`.
   """
   @spec to_stream(t()) :: {:ok, Stream.t()} | {:error, String.t()}
   def to_stream(%__MODULE__{} = scanner) do
@@ -159,10 +254,31 @@ defmodule ExArrow.Scanner do
   end
 
   @doc """
-  Scan statistics.
+  Return scan statistics.
 
-  Pass the scanner for partition-prune preview (no row-group / row counts yet),
-  or the `:dataset` stream for live / post-scan aggregates.
+  ## Parameters
+
+    * `scanner_or_stream` — either:
+
+      * an `ExArrow.Scanner.t()` — **preview** after partition prune only
+        (`fragments_scanned`, row-group, and `rows_emitted` are `0`)
+      * an `ExArrow.Stream.t()` with `backend: :dataset` — live or post-scan
+        aggregates from the Agent
+
+  ## Returns
+
+  A `t:stats/0` map. Raises `ArgumentError` for other arguments.
+
+  ## Examples
+
+      preview = ExArrow.Scanner.stats(scanner)
+      preview.fragments_pruned_partition
+
+      {:ok, stream} = ExArrow.Scanner.to_stream(scanner)
+      _ = Enum.to_list(stream)
+      stats = ExArrow.Scanner.stats(stream)
+      stats.row_groups_skipped
+      stats.rows_emitted
   """
   @spec stats(t() | Stream.t()) :: stats()
   def stats(%__MODULE__{} = scanner) do

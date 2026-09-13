@@ -4,6 +4,13 @@ defmodule ExArrow.FileSystem.Local do
 
   Paths are expanded with `Path.expand/1` before use. File contents are not
   read here; Dataset / Parquet NIFs open paths returned by discovery.
+
+  ## Example
+
+      fs = ExArrow.FileSystem.Local.new()
+      {:ok, entries} = ExArrow.FileSystem.list(fs, "/data/events")
+      {:ok, paths} = ExArrow.FileSystem.glob(fs, "/data/**/*.parquet")
+      ExArrow.FileSystem.exists?(fs, "/data/events")
   """
 
   @behaviour ExArrow.FileSystem
@@ -12,10 +19,15 @@ defmodule ExArrow.FileSystem.Local do
 
   defstruct []
 
+  @typedoc "Empty handle; all state is the OS filesystem."
   @type t :: %__MODULE__{}
 
   @doc """
   Build a local filesystem handle.
+
+  ## Examples
+
+      iex> %ExArrow.FileSystem.Local{} = ExArrow.FileSystem.Local.new()
   """
   @spec new() :: t()
   def new, do: %__MODULE__{}

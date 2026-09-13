@@ -1,6 +1,9 @@
 defmodule ExArrow.FileSystemTest do
   use ExUnit.Case, async: true
 
+  doctest ExArrow.FileSystem.Local
+  doctest ExArrow.FileSystem.Memory
+
   alias ExArrow.FileSystem
   alias ExArrow.FileSystem.Local
   alias ExArrow.FileSystem.Memory

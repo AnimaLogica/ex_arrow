@@ -1,37 +1,75 @@
 defmodule ExArrow.Compute.Expression do
   @moduledoc """
-  Analyzable compute expression AST for filters and (later) Dataset scanners.
+  Analyzable compute expression AST for filters and Dataset scanners.
 
   Builders are the canonical API for 0.9. Macro sugar (`expr do ... end`) is
-  out of scope. Expressions are data: they can be validated against a schema,
-  printed for diagnostics, and partially compiled to the Parquet filter tuple
-  AST used since v0.8.0. They are not Elixir closures.
+  out of scope. Expressions are **data**: they can be validated against a
+  schema, printed for diagnostics, partially compiled to the Parquet filter
+  tuple AST (v0.8.0), and evaluated as residuals via
+  `ExArrow.Compute.filter/2`. They are not Elixir closures.
 
-  ## Example
+  ## Typical usage
 
       alias ExArrow.Compute.Expression, as: E
 
       filter =
         E.and_(
-          E.gte(E.field("date"), E.scalar(~D[2026-01-01])),
+          E.gte(E.field("year"), E.scalar(2026)),
           E.ne(E.field("amount"), E.scalar(0))
         )
 
+      {:ok, ^filter} = E.validate(filter, schema)
       {pushed, residual} = E.to_parquet_filters(filter)
+
+  Use Expressions with `ExArrow.Dataset.scanner/2` so the Scanner can prune
+  partitions, push Parquet filters, and apply residuals.
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.eq(E.field("id"), E.scalar(1)))
+      "eq(field(\\"id\\"), scalar(1))"
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> E.expression?(E.field("x"))
+      true
   """
 
   alias ExArrow.Schema
 
+  @typedoc """
+  An expression tree.
+
+  ## Fields
+
+    * `:node` — internal AST (`t:expr_node/0`). Prefer builders (`field/1`,
+      `scalar/1`, `eq/2`, ...) over constructing nodes by hand.
+  """
   @type t :: %__MODULE__{node: expr_node()}
   defstruct [:node]
 
+  @typedoc """
+  Internal AST node.
+
+    * `{:field, name}` — column reference
+    * `{:scalar, value}` — literal (`t:scalar/0`)
+    * `{:call, op, args}` — comparison or boolean operator
+  """
   @type expr_node ::
           {:field, String.t()}
           | {:scalar, scalar()}
           | {:call, op(), [expr_node()]}
 
+  @typedoc "Comparison and boolean operators in the AST."
   @type op :: :eq | :ne | :gt | :gte | :lt | :lte | :and | :or | :not
 
+  @typedoc """
+  Literal values accepted by `scalar/1`.
+
+  Temporal values (`Date`, `NaiveDateTime`, `DateTime`) validate against
+  date/timestamp columns but are **residual** for Parquet pushdown in 0.9
+  (they are not bound into the v0.8 filter tuple AST yet).
+  """
   @type scalar ::
           integer()
           | float()
@@ -45,6 +83,20 @@ defmodule ExArrow.Compute.Expression do
 
   @doc """
   Reference a column by name.
+
+  ## Parameters
+
+    * `name` — UTF-8 string or atom (atoms are converted with `Atom.to_string/1`)
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.field("amount"))
+      "field(\\"amount\\")"
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> E.field(:amount) == E.field("amount")
+      true
   """
   @spec field(String.t() | atom()) :: t()
   def field(name) when is_binary(name), do: %__MODULE__{node: {:field, name}}
@@ -54,8 +106,22 @@ defmodule ExArrow.Compute.Expression do
   @doc """
   A scalar literal.
 
-  Supported values: integer, float, boolean, UTF-8 string, `Date`,
-  `NaiveDateTime`, and `DateTime`.
+  ## Parameters
+
+    * `value` — integer, float, boolean, UTF-8 string, `Date`,
+      `NaiveDateTime`, or `DateTime`
+
+  Raises `ArgumentError` for invalid UTF-8 or unsupported terms.
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.scalar(42))
+      "scalar(42)"
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.scalar(true))
+      "scalar(true)"
   """
   @spec scalar(scalar()) :: t()
   def scalar(%Date{} = d), do: %__MODULE__{node: {:scalar, d}}
@@ -77,37 +143,59 @@ defmodule ExArrow.Compute.Expression do
     do: raise(ArgumentError, "unsupported scalar: #{inspect(other)}")
 
   @doc """
-  Equality comparison.
+  Equality comparison (`left == right`).
+
+  ## Parameters
+
+    * `left`, `right` — field or scalar expressions
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.eq(E.field("ok"), E.scalar(true)))
+      "eq(field(\\"ok\\"), scalar(true))"
   """
   @spec eq(t(), t()) :: t()
   def eq(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:eq, [l, r])
 
   @doc """
-  Inequality comparison.
+  Inequality comparison (`left != right`).
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.ne(E.field("amount"), E.scalar(0)))
+      "ne(field(\\"amount\\"), scalar(0))"
   """
   @spec ne(t(), t()) :: t()
   def ne(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:ne, [l, r])
 
   @doc """
-  Greater-than comparison.
+  Greater-than comparison (`left > right`).
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> to_string(E.gt(E.field("score"), E.scalar(0.9)))
+      "gt(field(\\"score\\"), scalar(0.9))"
   """
   @spec gt(t(), t()) :: t()
   def gt(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:gt, [l, r])
 
   @doc """
-  Greater-than-or-equal comparison.
+  Greater-than-or-equal comparison (`left >= right`).
   """
   @spec gte(t(), t()) :: t()
   def gte(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:gte, [l, r])
 
   @doc """
-  Less-than comparison.
+  Less-than comparison (`left < right`).
   """
   @spec lt(t(), t()) :: t()
   def lt(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:lt, [l, r])
 
   @doc """
-  Less-than-or-equal comparison.
+  Less-than-or-equal comparison (`left <= right`).
   """
   @spec lte(t(), t()) :: t()
   def lte(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:lte, [l, r])
@@ -116,6 +204,13 @@ defmodule ExArrow.Compute.Expression do
   Boolean AND of two expressions.
 
   Named `and_/2` because `and/2` is a Kernel special form.
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> expr = E.and_(E.gt(E.field("a"), E.scalar(0)), E.lt(E.field("a"), E.scalar(10)))
+      iex> to_string(expr) =~ "and_("
+      true
   """
   @spec and_(t(), t()) :: t()
   def and_(%__MODULE__{} = l, %__MODULE__{} = r), do: call(:and, [l, r])
@@ -132,22 +227,64 @@ defmodule ExArrow.Compute.Expression do
   Boolean NOT.
 
   Named `not_/1` because `not/1` is a Kernel special form.
+
+  Always residual for Parquet pushdown (the v0.8 filter AST has no NOT).
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> {nil, residual} = E.to_parquet_filters(E.not_(E.eq(E.field("ok"), E.scalar(true))))
+      iex> to_string(residual) =~ "not_("
+      true
   """
   @spec not_(t()) :: t()
   def not_(%__MODULE__{} = e), do: call(:not, [e])
 
   @doc """
   Returns `true` if `term` is an `ExArrow.Compute.Expression`.
+
+  ## Examples
+
+      iex> ExArrow.Compute.Expression.expression?(ExArrow.Compute.Expression.field("x"))
+      true
+
+      iex> ExArrow.Compute.Expression.expression?(:nope)
+      false
   """
   @spec expression?(term()) :: boolean()
   def expression?(%__MODULE__{}), do: true
   def expression?(_), do: false
 
   @doc """
-  Type-check `expr` against `schema`.
+  Type-check `expr` against a schema or a field-name map.
 
   Checks that field names exist and that comparisons are type-compatible
   with the referenced column (and the other side, when both are fields).
+
+  ## Parameters
+
+    * `expr` — expression to validate
+    * `schema_or_fields` — either:
+
+      * an `ExArrow.Schema.t()`, or
+      * a `%{String.t() => type_atom}` map (useful when merging Hive
+        partition types into the file schema for Scanner validation)
+
+  ## Returns
+
+    * `{:ok, expr}` when valid
+    * `{:error, message}` for unknown fields or type mismatches
+
+  ## Examples
+
+      {:ok, batch} = ExArrow.RecordBatch.from_lists([{"amount", :s64, [1]}])
+      schema = ExArrow.RecordBatch.schema(batch)
+      alias ExArrow.Compute.Expression, as: E
+      {:ok, _} = E.validate(E.gt(E.field("amount"), E.scalar(0)), schema)
+
+      # Partition keys for Dataset.scanner/2:
+      fields = Map.merge(%{"amount" => :int64}, %{"year" => :int32})
+      {:ok, _} = E.validate(E.gte(E.field("year"), E.scalar(2026)), fields)
   """
   @spec validate(t(), Schema.t() | %{optional(String.t()) => term()}) ::
           {:ok, t()} | {:error, String.t()}
@@ -171,7 +308,13 @@ defmodule ExArrow.Compute.Expression do
   Split `expr` into a Parquet-pushable filter AST and an optional residual
   expression.
 
-  Returns `{pushed, residual}` where:
+  ## Parameters
+
+    * `expr` — expression to split
+
+  ## Returns
+
+  `{pushed, residual}` where:
 
   - `pushed` is `nil` or a v0.8.0 filter tuple
     (`{:eq|:ne|:gt|:gte|:lt|:lte, col, value}` / `{:and|:or, [...]}`)
@@ -181,6 +324,22 @@ defmodule ExArrow.Compute.Expression do
 
   AND may push one side and residual the other. OR is pushed only when both
   sides are fully pushable; otherwise the whole OR is residual.
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> E.to_parquet_filters(E.gt(E.field("score"), E.scalar(0.9)))
+      {{:gt, "score", 0.9}, nil}
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> {pushed, residual} =
+      ...>   E.to_parquet_filters(
+      ...>     E.and_(E.gt(E.field("amount"), E.scalar(0)), E.gte(E.field("day"), E.scalar(~D[2026-01-01])))
+      ...>   )
+      iex> pushed
+      {:gt, "amount", 0}
+      iex> match?(%E{}, residual)
+      true
   """
   @spec to_parquet_filters(t()) :: {term() | nil, t() | nil}
   def to_parquet_filters(%__MODULE__{node: node}) do
@@ -195,6 +354,12 @@ defmodule ExArrow.Compute.Expression do
 
   @doc """
   Render `expr` as a diagnostic string.
+
+  ## Examples
+
+      iex> alias ExArrow.Compute.Expression, as: E
+      iex> ExArrow.Compute.Expression.to_string(E.lt(E.field("x"), E.scalar(3)))
+      "lt(field(\\"x\\"), scalar(3))"
   """
   @spec to_string(t()) :: String.t()
   def to_string(%__MODULE__{node: node}), do: render(node)

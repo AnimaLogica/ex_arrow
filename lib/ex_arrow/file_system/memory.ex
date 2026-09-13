@@ -6,15 +6,21 @@ defmodule ExArrow.FileSystem.Memory do
   also registers parent directories so `list/3` can walk a Hive-style tree
   without touching the OS.
 
+  ## Fields
+
+  * `:entries` — `%{path => ExArrow.FileSystem.entry()}`
+
   ## Examples
 
-      fs = ExArrow.FileSystem.Memory.new()
-      {:ok, fs} = ExArrow.FileSystem.Memory.put_file(fs, "/data/a.parquet", size: 128)
+      iex> {:ok, fs} = ExArrow.FileSystem.Memory.new(%{"/data/a.parquet" => 128})
+      iex> ExArrow.FileSystem.exists?(fs, "/data/a.parquet")
+      true
 
-      {:ok, fs} =
-        ExArrow.FileSystem.Memory.new(%{
-          "/data/year=2026/part-0.parquet" => 128
-        })
+      iex> fs = ExArrow.FileSystem.Memory.new()
+      iex> {:ok, fs} = ExArrow.FileSystem.Memory.put_file(fs, "/data/year=2026/part.parquet", size: 64)
+      iex> {:ok, paths} = ExArrow.FileSystem.glob(fs, "/data/**/*.parquet")
+      iex> paths
+      ["/data/year=2026/part.parquet"]
   """
 
   @behaviour ExArrow.FileSystem
@@ -23,11 +29,24 @@ defmodule ExArrow.FileSystem.Memory do
 
   defstruct entries: %{}
 
+  @typedoc "Internal path => entry map."
   @type entry_map :: %{optional(String.t()) => FileSystem.entry()}
+
+  @typedoc """
+  Memory filesystem handle.
+
+  ## Fields
+
+    * `:entries` — normalized paths to `t:ExArrow.FileSystem.entry/0` maps
+  """
   @type t :: %__MODULE__{entries: entry_map()}
 
   @doc """
   Build an empty memory filesystem.
+
+  ## Examples
+
+      iex> %ExArrow.FileSystem.Memory{entries: %{}} = ExArrow.FileSystem.Memory.new()
   """
   @spec new() :: t()
   def new, do: %__MODULE__{}
@@ -35,7 +54,21 @@ defmodule ExArrow.FileSystem.Memory do
   @doc """
   Build a memory filesystem from a path → size map or `{path, size}` list.
 
-  Returns `{:ok, fs}` or `{:error, message}`.
+  ## Parameters
+
+    * `seed` — `%{path => size}` or `[{path, size}, ...]` where `size` is a
+      non-negative integer (file byte size)
+
+  ## Returns
+
+    * `{:ok, fs}` on success
+    * `{:error, message}` for invalid paths or sizes
+
+  ## Examples
+
+      iex> {:ok, fs} = ExArrow.FileSystem.Memory.new(%{"/data/a.parquet" => 10})
+      iex> ExArrow.FileSystem.exists?(fs, "/data")
+      true
   """
   @spec new(map() | [{String.t(), non_neg_integer()}]) ::
           {:ok, t()} | {:error, String.t()}
@@ -46,6 +79,21 @@ defmodule ExArrow.FileSystem.Memory do
   Register a file at `path` with `size` (default `0`).
 
   Creates missing parent directories. Returns `{:ok, fs}` or `{:error, msg}`.
+
+  ## Parameters
+
+    * `fs` — memory filesystem
+    * `path` — absolute-style path string (normalized with a leading `/`)
+    * `opts`:
+
+      * `:size` — non-negative integer byte size (default `0`)
+
+  ## Examples
+
+      iex> fs = ExArrow.FileSystem.Memory.new()
+      iex> {:ok, fs} = ExArrow.FileSystem.Memory.put_file(fs, "/data/x.parquet", size: 32)
+      iex> ExArrow.FileSystem.exists?(fs, "/data/x.parquet")
+      true
   """
   @spec put_file(t(), String.t(), keyword()) :: {:ok, t()} | {:error, String.t()}
   def put_file(fs, path, opts \\ [])
