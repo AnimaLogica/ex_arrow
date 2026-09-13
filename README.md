@@ -63,6 +63,10 @@ Native Apache Arrow for the BEAM: IPC streaming, Arrow Flight, Arrow Flight SQL,
   - [Shipped (v0.7.0)](#shipped-v070)
   - [Shipped (v0.8.0)](#shipped-v080)
   - [Shipped (v0.9.0)](#shipped-v090)
+  - [Planned (v0.10.0)](#planned-v0100)
+  - [Planned (v0.11.0)](#planned-v0110)
+  - [Planned (v0.12.0)](#planned-v0120)
+  - [Planned (v1.0.0)](#planned-v100)
 - [FAQ](#faq)
 - [License](#license)
 
@@ -1262,8 +1266,10 @@ script/ci
 
 ## Roadmap
 
-The items below represent the planned direction for ExArrow. Contributions are
-welcome for any of them.
+Shipped releases are summarized below. Planned releases (v0.10 through v1.0)
+follow the architectural roadmap: core Arrow model, compute depth, cloud /
+Dataset writes, then a stable 1.0 platform. Contributions are welcome for any
+of them.
 
 ### Shipped (v0.2.0)
 
@@ -1394,11 +1400,62 @@ welcome for any of them.
 - **arrow-rs 59.3.0** — coordinated parquet / Flight / ADBC companion bumps.
 - **Docs** — Datasets guide, Livebook 06, dataset scan bench.
 
-### Longer-term
+### Planned (v0.10.0)
 
-- **Streaming writes to Delta Lake** — sink for data pipeline nodes.
-- **Windows aarch64 precompiled NIF** — once GitHub-hosted Windows arm64
-  runners are generally available.
+Complete the core Arrow model so ExArrow is a coherent Arrow API, not only a
+transport API — everything constructible from Elixir:
+
+- **`ExArrow.DataType`** — first-class type values; decimal and temporal coverage
+- Public **`Field` / `Schema` construction** and **`Schema.merge` / unify**
+  (lift Dataset's names-must-match check to real fragment schema promotion)
+- First-class **`Array`** constructors (`Array.from_list/2` with nulls) and
+  **`Scalar`**
+- **Null support** in `RecordBatch.from_lists/1` / `from_map/1`
+- **`Compute.cast/2`**
+- **C Stream Interface** (CDI streaming sibling)
+- **`expr do ... end`** macro sugar over the builder API
+- Dictionary/categorical review; Inspect protocols; migrate
+  `from_columns/4` off the front door
+
+### Planned (v0.11.0)
+
+Compute depth and extension types (builds on the comparison/boolean kernels
+from v0.9.0):
+
+- Kernel expansion: arithmetic, string basics, null functions, take/slice,
+  aggregates (min/max/sum/mean/count)
+- Broader Expression evaluation (arithmetic in filters, projection
+  expressions, alias)
+- Parquet **page-level filtering** and pushdown of the wider expression set
+- Extension-type registry and round-trip preservation
+- Compute benchmarks; unsupported kernels fail predictably
+
+Non-goal: DataFrame DSL / group-by analytics (Explorer's job).
+
+### Planned (v0.12.0)
+
+Remote, cloud, and Dataset writes:
+
+- Object-store **`FileSystem`** adapter (S3 first); S3 Dataset scanning
+- **Dataset writes** — partition-by-columns, basename templates, max rows per
+  file/group, overwrite policy, atomicity, visitor telemetry
+- Flight middleware and auth hooks; OpenTelemetry context over gRPC
+- Flight `do_exchange` completion; deadline/cancellation review; ADBC
+  partitions and metadata review
+
+### Planned (v1.0.0)
+
+Stable Arrow platform for the BEAM:
+
+- Stable core modules; 0.10 deprecations removed
+- Compatibility matrix (Elixir/OTP × arrow-rs × PyArrow interop fixtures)
+- Documented copy/ownership semantics at every boundary (NIF, CDI, C Stream,
+  Explorer/Nx)
+- Upgrade policy and long-term support statement
+- Benchmarks vs PyArrow equivalents published in docs
+
+Also under consideration: streaming writes to Delta Lake; Windows aarch64
+precompiled NIFs when hosted runners are generally available.
 
 ---
 
