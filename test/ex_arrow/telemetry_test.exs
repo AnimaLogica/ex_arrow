@@ -1,5 +1,7 @@
 defmodule ExArrow.TelemetryTest do
-  use ExUnit.Case, async: true
+  # Global :telemetry handlers — must not run in parallel with other tests that
+  # emit the same events (otherwise assert_received can see foreign measurements).
+  use ExUnit.Case, async: false
 
   alias ExArrow.RecordBatch
   alias ExArrow.Telemetry
@@ -35,14 +37,19 @@ defmodule ExArrow.TelemetryTest do
     @describetag event: [:ex_arrow, :stream, :batch]
 
     test "delivers measurements and metadata to attached handlers", %{ref: ref} do
+      token = make_ref()
+
       Telemetry.execute(
         [:ex_arrow, :stream, :batch],
         %{rows: 10, columns: 3, batch_count: 1},
-        %{source: {:parquet, "/tmp/x.parquet"}, schema: nil}
+        %{source: {:parquet, "/tmp/x.parquet"}, schema: nil, test_token: token}
       )
 
       if @telemetry_available do
-        assert_received {:telemetry, [:ex_arrow, :stream, :batch], measurements, metadata}
+        assert_receive {:telemetry, [:ex_arrow, :stream, :batch], measurements,
+                        %{test_token: ^token} = metadata},
+                       1000
+
         assert measurements[:rows] == 10
         assert measurements[:columns] == 3
         assert metadata[:source] == {:parquet, "/tmp/x.parquet"}
@@ -56,10 +63,18 @@ defmodule ExArrow.TelemetryTest do
     @describetag event: [:ex_arrow, :parquet, :read]
 
     test "emits with source metadata" do
-      Telemetry.execute([:ex_arrow, :parquet, :read], %{}, %{source: "/data/events.parquet"})
+      token = make_ref()
+
+      Telemetry.execute([:ex_arrow, :parquet, :read], %{}, %{
+        source: "/data/events.parquet",
+        test_token: token
+      })
 
       if @telemetry_available do
-        assert_received {:telemetry, [:ex_arrow, :parquet, :read], _measurements, metadata}
+        assert_receive {:telemetry, [:ex_arrow, :parquet, :read], _measurements,
+                        %{test_token: ^token} = metadata},
+                       1000
+
         assert metadata[:source] == "/data/events.parquet"
       end
     end

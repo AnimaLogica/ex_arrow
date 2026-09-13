@@ -147,4 +147,74 @@ defmodule ExArrow.Compute.ExpressionTest do
       assert msg =~ "residual"
     end
   end
+
+  describe "coverage — types, predicates, encode" do
+    test "expression?/1, DateTime scalar, and unsupported scalar" do
+      assert E.expression?(E.field("x"))
+      refute E.expression?(:nope)
+
+      dt = DateTime.from_naive!(~N[2026-01-01 00:00:00], "Etc/UTC")
+      assert to_string(E.scalar(dt)) =~ "2026-01-01"
+
+      assert_raise ArgumentError, fn -> E.scalar(%{not: :supported}) end
+    end
+
+    test "validate covers more column types and compositions" do
+      schema =
+        schema_for([
+          {"i8", :s8, [1]},
+          {"i16", :s16, [1]},
+          {"u8", :u8, [1]},
+          {"u16", :u16, [1]},
+          {"u32", :u32, [1]},
+          {"f32", :f32, [1.0]},
+          {"a", :s64, [1]},
+          {"b", :s64, [2]},
+          {"day", :date32, [0]},
+          {"name", :utf8, ["x"]},
+          {"flag", :bool, [true]}
+        ])
+
+      assert {:ok, _} = E.validate(E.eq(E.field("i8"), E.scalar(1)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("i16"), E.scalar(1)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("u8"), E.scalar(1)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("u16"), E.scalar(1)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("u32"), E.scalar(1)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("f32"), E.scalar(1.5)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("day"), E.scalar(~D[1970-01-01])), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("a"), E.field("b")), schema)
+
+      assert {:ok, _} =
+               E.validate(
+                 E.and_(E.eq(E.field("flag"), E.scalar(true)), E.gt(E.field("a"), E.scalar(0))),
+                 schema
+               )
+
+      assert {:ok, _} = E.validate(E.not_(E.eq(E.field("flag"), E.scalar(false))), schema)
+
+      assert {:error, msg} = E.validate(E.eq(E.scalar(1), E.scalar(2)), schema)
+      assert msg =~ "field"
+
+      assert {:error, msg} = E.validate(E.eq(E.field("a"), E.field("name")), schema)
+      assert msg =~ "cannot compare"
+
+      dt = DateTime.from_naive!(~N[2026-06-01 12:00:00], "Etc/UTC")
+
+      assert {:ok, _} =
+               E.validate(
+                 E.gte(E.field("day"), E.scalar(dt)),
+                 schema_for([{"day", :timestamp_micros, [0]}])
+               )
+    end
+
+    test "encode_for_nif covers temporal scalars" do
+      dt = DateTime.from_naive!(~N[2026-01-01 00:00:00], "Etc/UTC")
+
+      assert {:call, :gt, [_, {:scalar, {:timestamp_micros, _}}]} =
+               E.encode_for_nif(E.gt(E.field("ts"), E.scalar(dt)))
+
+      assert {:call, :gte, [_, {:scalar, {:date32, _}}]} =
+               E.encode_for_nif(E.gte(E.field("d"), E.scalar(~D[2026-01-01])))
+    end
+  end
 end

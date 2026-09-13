@@ -205,6 +205,42 @@ defmodule ExArrow.FileSystemTest do
       refute FileSystem.match_glob?("/a/b/c.txt", "/a/**/*.parquet")
       assert FileSystem.match_glob?("/a/foo.parquet", "/a/*.parquet")
       refute FileSystem.match_glob?("/a/b/foo.parquet", "/a/*.parquet")
+      assert FileSystem.match_glob?("/a/b/c", "/a/**")
+      assert FileSystem.match_glob?("/a/anything", "/a/*")
+      refute FileSystem.match_glob?("/a/b", "/a")
+    end
+  end
+
+  describe "error paths" do
+    test "rejects non-keyword opts and Memory put_file guards" do
+      fs = Local.new()
+      assert {:error, msg} = FileSystem.list(fs, "/tmp", :not_kw)
+      assert msg =~ "keyword"
+
+      assert {:error, msg} = FileSystem.glob(fs, "/tmp/*", :not_kw)
+      assert msg =~ "keyword"
+
+      mem = Memory.new()
+      assert {:error, msg} = Memory.put_file(mem, :path)
+      assert msg =~ ~r/UTF-8|string/
+
+      assert {:error, msg} = Memory.put_file(mem, "/x", :not_kw)
+      assert msg =~ "keyword"
+
+      assert {:error, msg} = Memory.put_file(mem, "/x", size: -1)
+      assert msg =~ "size"
+
+      assert {:ok, mem} = Memory.put_file(mem, "/only.parquet", size: 1)
+      assert {:ok, [%{type: :file}]} = FileSystem.list(mem, "/only.parquet")
+      assert FileSystem.exists?(mem, "/")
+    end
+
+    @tag :tmp_dir
+    test "lists a hidden file path as empty when ignore_hidden", %{tmp_dir: dir} do
+      hidden = Path.join(dir, ".secret.parquet")
+      File.write!(hidden, "abc")
+      fs = Local.new()
+      assert {:ok, []} = FileSystem.list(fs, hidden, ignore_hidden: true)
     end
   end
 end
