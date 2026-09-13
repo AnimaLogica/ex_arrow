@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787353122420,
+  "lastUpdate": 1789327295287,
   "repoUrl": "https://github.com/thanos/ex_arrow",
   "entries": {
     "ExArrow Benchmark Suite": [
@@ -5091,6 +5091,140 @@ window.BENCHMARK_DATA = {
           {
             "name": "[pipeline] binary → Flight (20 batches)",
             "value": 1614288,
+            "unit": "ns/op"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "thanos@syntazo.com",
+            "name": "thanos vassilakis",
+            "username": "thanos"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "17fdd003a56a9d67432aefa8643da2d7d3bc5950",
+          "message": "Merge pull request #269 from thanos/v0.9.0/dataset-scanner\n\n## Summary\n- Dataset / Scanner / Expression / FileSystem (M0–M8) plus review fixes\n- M9: version 0.9.0, CHANGELOG (2026-09-13), release notes, pin updates\n- Quality gate green; checksum regenerates after the `v0.9.0` NIF assets land\n## Test plan\n- [ ] CI green\n- [ ] After merge + tag: wait for Precompiled NIFs workflow\n- [ ] Regenerate and commit `checksum-Elixir.ExArrow.Native.exs`\n- [ ] `mix hex.publish`",
+          "timestamp": "2026-09-13T15:12:20-04:00",
+          "tree_id": "b63d1058d6678290d56eed6232e9368ad24d0e64",
+          "url": "https://github.com/thanos/ex_arrow/commit/17fdd003a56a9d67432aefa8643da2d7d3bc5950"
+        },
+        "date": 1789327294715,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "[adbc] Enum.map (comparable row-oriented)",
+            "value": 463,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[adbc] open ipc stream (20 batches)",
+            "value": 2639,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[adbc] stream schema peek (20 batches)",
+            "value": 3235,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[adbc] stream collect all batches (20 batches)",
+            "value": 74757,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[flight] list_flights",
+            "value": 185688,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[flight] do_put (10 batches)",
+            "value": 330293,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[flight] do_get stream_handle only (10 batches)",
+            "value": 40663554,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[flight] do_get + collect (10 batches)",
+            "value": 40992158,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[flight] roundtrip put→get (10 batches)",
+            "value": 41366021,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_read] stream_handle (10 batches)",
+            "value": 1983,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_read] stream_handle (50 batches)",
+            "value": 4128,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_read] from_file handle (50 batches)",
+            "value": 5935,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_read] materialise (10 batches)",
+            "value": 38818,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_read] materialise (50 batches)",
+            "value": 182875,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_read] from_file + materialise (50 batches)",
+            "value": 208769,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_write] term_to_binary (100 rows, 3 fields)",
+            "value": 9778,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_write] ipc to_binary (10 batches)",
+            "value": 13208,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_write] ipc to_binary (50 batches)",
+            "value": 56163,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[ipc_write] ipc to_file (50 batches)",
+            "value": 987986,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[pipeline] binary → Flight (20 batches)",
+            "value": 1740020,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[pipeline] file → Flight (zero-copy, 20 batches)",
+            "value": 1740158,
+            "unit": "ns/op"
+          },
+          {
+            "name": "[pipeline] materialise → Flight (20 batches)",
+            "value": 1746926,
             "unit": "ns/op"
           }
         ]
