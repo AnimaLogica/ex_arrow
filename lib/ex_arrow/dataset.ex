@@ -440,12 +440,18 @@ defmodule ExArrow.Dataset do
   end
 
   defp attach_sizes(paths, filesystem) do
-    Enum.reduce_while(paths, {:ok, []}, fn path, {:ok, acc} ->
-      case lookup_size(filesystem, path) do
-        {:ok, size} -> {:cont, {:ok, acc ++ [{path, size}]}}
-        {:error, _} = err -> {:halt, err}
-      end
-    end)
+    result =
+      Enum.reduce_while(paths, {:ok, []}, fn path, {:ok, acc} ->
+        case lookup_size(filesystem, path) do
+          {:ok, size} -> {:cont, {:ok, [{path, size} | acc]}}
+          {:error, _} = err -> {:halt, err}
+        end
+      end)
+
+    case result do
+      {:ok, acc} -> {:ok, Enum.reverse(acc)}
+      {:error, _} = err -> err
+    end
   end
 
   defp lookup_size(filesystem, path) do
@@ -536,22 +542,28 @@ defmodule ExArrow.Dataset do
   end
 
   defp build_fragments(sized_paths, root, format, {:hive, schema}) do
-    Enum.reduce_while(sized_paths, {:ok, []}, fn {path, size}, {:ok, acc} ->
-      case Hive.parse_path(path, root, schema) do
-        {:ok, values} ->
-          frag = %Fragment{
-            path: path,
-            format: format,
-            partition_values: values,
-            size: size
-          }
+    result =
+      Enum.reduce_while(sized_paths, {:ok, []}, fn {path, size}, {:ok, acc} ->
+        case Hive.parse_path(path, root, schema) do
+          {:ok, values} ->
+            frag = %Fragment{
+              path: path,
+              format: format,
+              partition_values: values,
+              size: size
+            }
 
-          {:cont, {:ok, acc ++ [frag]}}
+            {:cont, {:ok, [frag | acc]}}
 
-        {:error, _} = err ->
-          {:halt, err}
-      end
-    end)
+          {:error, _} = err ->
+            {:halt, err}
+        end
+      end)
+
+    case result do
+      {:ok, acc} -> {:ok, Enum.reverse(acc)}
+      {:error, _} = err -> err
+    end
   end
 
   # --- schema ---------------------------------------------------------------

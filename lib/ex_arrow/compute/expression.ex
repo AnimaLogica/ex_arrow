@@ -325,6 +325,10 @@ defmodule ExArrow.Compute.Expression do
   AND may push one side and residual the other. OR is pushed only when both
   sides are fully pushable; otherwise the whole OR is residual.
 
+  Note: `ExArrow.Parquet.Reader` `:filters` accepts an Expression only when
+  it is fully pushable (`residual` is `nil`). For mixed pushable/residual
+  filters, use `ExArrow.Dataset.scanner/2`.
+
   ## Examples
 
       iex> alias ExArrow.Compute.Expression, as: E

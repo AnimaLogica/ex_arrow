@@ -489,7 +489,15 @@ fn make_scalar_array(value: &ScalarValue, data_type: &DataType) -> Result<ArrayR
             Ok(Arc::new(Float64Array::from(vec![*v])) as ArrayRef)
         }
         (ScalarValue::Int(v), DataType::Float64) => {
-            Ok(Arc::new(Float64Array::from(vec![*v as f64])) as ArrayRef)
+            let f = *v as f64;
+            // Use i128 on the round-trip so saturating f64→i64 casts (e.g.
+            // i64::MAX) cannot mask precision loss.
+            if (f as i128) != i128::from(*v) {
+                return Err(format!(
+                    "filter value {v} is not exactly representable as Float64"
+                ));
+            }
+            Ok(Arc::new(Float64Array::from(vec![f])) as ArrayRef)
         }
         (ScalarValue::Float(v), DataType::Float32) => {
             let f = *v as f32;

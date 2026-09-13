@@ -41,8 +41,10 @@ defmodule ExArrow.Dataset.Fragment do
     * `:format` — `:parquet` or `:ipc`
     * `:partition_values` — map of Hive column name => coerced term
       (empty map when partitioning is `:none`)
-    * `:size` — file size in bytes as reported by the filesystem (may be `0`
-      when unknown)
+    * `:size` — file size in bytes as reported by the filesystem. Current
+      backends (`Local`, `Memory`) always resolve a real size; a future
+      object-store backend may report `0` when size is unavailable without
+      an extra round-trip
   """
   @type t :: %__MODULE__{
           path: String.t(),

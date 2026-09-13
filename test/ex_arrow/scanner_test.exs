@@ -237,6 +237,63 @@ defmodule ExArrow.ScannerTest do
       Stream.close(stream)
       _ = p1
     end
+
+    @tag :tmp_dir
+    @tag :nif
+    test "type mismatch across fragments with same column names is rejected", %{tmp_dir: dir} do
+      assert {:ok, a} =
+               RecordBatch.from_lists([{"id", :s64, [1, 2]}, {"amount", :f64, [1.0, 2.0]}])
+
+      assert {:ok, b} =
+               RecordBatch.from_lists([{"id", :s64, [3, 4]}, {"amount", :utf8, ["x", "y"]}])
+
+      :ok = Parquet.Writer.to_file(Path.join(dir, "a.parquet"), RecordBatch.schema(a), [a])
+      :ok = Parquet.Writer.to_file(Path.join(dir, "b.parquet"), RecordBatch.schema(b), [b])
+
+      assert {:ok, dataset} = Dataset.open(dir)
+      assert {:ok, scanner} = Dataset.scanner(dataset)
+      assert {:ok, stream} = Scanner.to_stream(scanner)
+
+      assert %RecordBatch{} = Stream.next(stream)
+      assert {:error, msg} = Stream.next(stream)
+      assert msg =~ "schema mismatch"
+      assert msg =~ "amount"
+      Stream.close(stream)
+    end
+
+    @tag :tmp_dir
+    @tag :nif
+    test "stats/1 after close returns an error instead of crashing", %{tmp_dir: dir} do
+      {dataset, _} = hive_dataset!(Path.join(dir, "events"))
+      assert {:ok, scanner} = Dataset.scanner(dataset)
+      assert {:ok, stream} = Scanner.to_stream(scanner)
+      _ = Enum.to_list(stream)
+      assert %{rows_emitted: _} = Scanner.stats(stream)
+      assert :ok = Stream.close(stream)
+      assert {:error, "stream is closed"} = Scanner.stats(stream)
+    end
+
+    @tag :tmp_dir
+    @tag :nif
+    test "IPC type mismatch across fragments is rejected", %{tmp_dir: dir} do
+      assert {:ok, a} =
+               RecordBatch.from_lists([{"id", :s64, [1]}, {"v", :f64, [1.0]}])
+
+      assert {:ok, b} =
+               RecordBatch.from_lists([{"id", :s64, [2]}, {"v", :utf8, ["x"]}])
+
+      assert :ok = ExArrow.IPC.File.write(Path.join(dir, "a.arrow"), RecordBatch.schema(a), [a])
+      assert :ok = ExArrow.IPC.File.write(Path.join(dir, "b.arrow"), RecordBatch.schema(b), [b])
+
+      assert {:ok, dataset} = Dataset.open(dir, format: :ipc)
+      assert {:ok, scanner} = Dataset.scanner(dataset)
+      assert {:ok, stream} = Scanner.to_stream(scanner)
+
+      assert %RecordBatch{} = Stream.next(stream)
+      assert {:error, msg} = Stream.next(stream)
+      assert msg =~ "schema mismatch"
+      Stream.close(stream)
+    end
   end
 
   describe "Compile / Partition helpers" do
@@ -303,6 +360,27 @@ defmodule ExArrow.ScannerTest do
       assert to_string(bound) =~ "scalar(2026)"
       assert to_string(bound) =~ "field(\"id\")"
       assert Compile.bind_partitions(nil, %{}) == nil
+    end
+
+    test "compile partition-only expression drops residual and pushed" do
+      alias ExArrow.Scanner.Compile
+
+      expr = E.eq(E.field("year"), E.scalar(2026))
+      assert {:ok, {nil, nil}} = Compile.compile(expr, ["year", "month"])
+
+      and_only =
+        E.and_(
+          E.eq(E.field("year"), E.scalar(2026)),
+          E.eq(E.field("month"), E.scalar(1))
+        )
+
+      assert {:ok, {nil, nil}} = Compile.compile(and_only, ["year", "month"])
+
+      assert {:ok, {nil, nil}} =
+               Compile.compile({:and, [{:eq, "year", 2026}, {:eq, "month", 1}]}, [
+                 "year",
+                 "month"
+               ])
     end
   end
 

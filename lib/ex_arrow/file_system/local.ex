@@ -121,7 +121,7 @@ defmodule ExArrow.FileSystem.Local do
 
         if recursive do
           case collect_dir(full, true, ignore_hidden) do
-            {:ok, child} -> {:ok, acc ++ [entry | child]}
+            {:ok, child} -> {:ok, Enum.reverse(child, [entry | acc])}
             {:error, _} = err -> err
           end
         else

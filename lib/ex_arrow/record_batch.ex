@@ -87,9 +87,9 @@ defmodule ExArrow.RecordBatch do
 
   ## Nullability
 
-  `from_columns/4` and `from_lists/1` produce non-nullable columns
-  (`Field.nullable = false`). `from_lists/1` rejects `nil` cells in 0.9;
-  null-bitmap support arrives with the core-model release.
+  `from_columns/4`, `from_lists/1`, and `from_map/1` produce non-nullable
+  columns (`Field.nullable = false`). `from_lists/1` and `from_map/1` reject
+  `nil` cells in 0.9; null-bitmap support arrives with the core-model release.
   """
   alias ExArrow.Native
   alias ExArrow.Schema

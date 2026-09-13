@@ -145,4 +145,74 @@ defmodule ExArrow.ComputeFilterExprTest do
 
     assert msg =~ "out of range"
   end
+
+  @tag :nif
+  test "eq against Float64 column errors on a non-representable large integer" do
+    assert {:ok, batch} = RecordBatch.from_lists([{"amount", :f64, [1.0, 2.0]}])
+
+    assert {:error, msg} =
+             Compute.filter(
+               batch,
+               E.eq(E.field("amount"), E.scalar(9_223_372_036_854_775_807))
+             )
+
+    assert msg =~ "not exactly representable"
+  end
+
+  @tag :nif
+  test "eq against Float64 column succeeds for an exactly representable integer" do
+    # 2^52 is exactly representable as Float64.
+    n = 4_503_599_627_370_496
+
+    assert {:ok, batch} =
+             RecordBatch.from_lists([{"amount", :f64, [n * 1.0, 1.0]}])
+
+    assert {:ok, filtered} =
+             Compute.filter(batch, E.eq(E.field("amount"), E.scalar(n)))
+
+    assert RecordBatch.num_rows(filtered) == 1
+  end
+
+  @tag :nif
+  test "eq against Float32 column errors on non-representable float and succeeds for int" do
+    assert {:ok, batch} = RecordBatch.from_lists([{"x", :f32, [1.0, 2.0]}])
+
+    assert {:error, msg} =
+             Compute.filter(batch, E.eq(E.field("x"), E.scalar(1.0e40)))
+
+    assert msg =~ "not exactly representable"
+
+    assert {:ok, filtered} = Compute.filter(batch, E.eq(E.field("x"), E.scalar(2)))
+    assert RecordBatch.num_rows(filtered) == 1
+  end
+
+  @tag :nif
+  test "filters Int8/UInt8/Date64 and TimestampMillis columns" do
+    assert {:ok, i8} = RecordBatch.from_lists([{"x", :s8, [1, 2, 3]}])
+    assert {:ok, f} = Compute.filter(i8, E.gt(E.field("x"), E.scalar(1)))
+    assert RecordBatch.num_rows(f) == 2
+
+    assert {:ok, u8} = RecordBatch.from_lists([{"x", :u8, [1, 2, 3]}])
+    assert {:ok, f2} = Compute.filter(u8, E.eq(E.field("x"), E.scalar(2)))
+    assert RecordBatch.num_rows(f2) == 1
+
+    millis = [
+      Date.diff(~D[2025-01-01], ~D[1970-01-01]) * 86_400_000,
+      Date.diff(~D[2026-01-01], ~D[1970-01-01]) * 86_400_000
+    ]
+
+    assert {:ok, d64} = RecordBatch.from_lists([{"d", :date64, millis}])
+    assert {:ok, f3} = Compute.filter(d64, E.gte(E.field("d"), E.scalar(~D[2026-01-01])))
+    assert RecordBatch.num_rows(f3) == 1
+
+    assert {:ok, ts} =
+             RecordBatch.from_lists([
+               {"t", :timestamp_millis, [1_000, 2_000, 3_000]}
+             ])
+
+    assert {:ok, f4} =
+             Compute.filter(ts, E.gte(E.field("t"), E.scalar(2_000)))
+
+    assert RecordBatch.num_rows(f4) == 2
+  end
 end

@@ -227,8 +227,7 @@ defmodule ExArrow.Scanner do
       {:ok, agent} =
         Agent.start_link(fn ->
           %{
-            fragments: selected,
-            index: 0,
+            remaining: selected,
             format: scanner.dataset.format,
             columns: scanner.columns,
             read_opts: read_opts,
@@ -236,7 +235,7 @@ defmodule ExArrow.Scanner do
             current_inner: nil,
             current_path: nil,
             current_fragment: nil,
-            schema_names: nil,
+            schema_sig: nil,
             opened_paths: [],
             stats: stats,
             scan_meta: meta,
@@ -267,7 +266,9 @@ defmodule ExArrow.Scanner do
 
   ## Returns
 
-  A `t:stats/0` map. Raises `ArgumentError` for other arguments.
+  A `t:stats/0` map for an open scanner or live stream. For a `:dataset`
+  stream whose Agent has already been stopped via `ExArrow.Stream.close/1`,
+  returns `{:error, "stream is closed"}` instead of raising.
 
   ## Examples
 
@@ -279,8 +280,10 @@ defmodule ExArrow.Scanner do
       stats = ExArrow.Scanner.stats(stream)
       stats.row_groups_skipped
       stats.rows_emitted
+      :ok = ExArrow.Stream.close(stream)
+      {:error, "stream is closed"} = ExArrow.Scanner.stats(stream)
   """
-  @spec stats(t() | Stream.t()) :: stats()
+  @spec stats(t() | Stream.t()) :: stats() | {:error, String.t()}
   def stats(%__MODULE__{} = scanner) do
     {selected, pruned} =
       Partition.select_fragments(scanner.dataset.fragments, scanner.filter)
@@ -297,7 +300,11 @@ defmodule ExArrow.Scanner do
   end
 
   def stats(%Stream{backend: :dataset, resource: agent}) do
-    Agent.get(agent, & &1.stats)
+    if Process.alive?(agent) do
+      Agent.get(agent, & &1.stats)
+    else
+      {:error, "stream is closed"}
+    end
   end
 
   def stats(_), do: raise(ArgumentError, "Scanner.stats/1 expects a Scanner or dataset Stream")
@@ -465,11 +472,11 @@ defmodule ExArrow.Scanner do
         state.current_inner != nil ->
           {{:ok, :open}, state}
 
-        state.index >= length(state.fragments) ->
+        state.remaining == [] ->
           {:exhausted, state}
 
         true ->
-          frag = Enum.at(state.fragments, state.index)
+          [frag | _] = state.remaining
           open_fragment(state, frag)
       end
     end)
@@ -513,16 +520,7 @@ defmodule ExArrow.Scanner do
             {{:error, prefix_path(path, msg)}, state}
 
           {:ok, sch} ->
-            names = Schema.field_names(sch)
-
-            names =
-              if is_list(state.columns) do
-                state.columns
-              else
-                names
-              end
-
-            case accept_schema_names(state, path, names) do
+            case accept_schema_sig(state, path, schema_signature(sch)) do
               {:error, _} = err ->
                 {err, state}
 
@@ -550,21 +548,27 @@ defmodule ExArrow.Scanner do
         {:error, prefix_path(path, msg)}
 
       {:ok, sch} ->
-        accept_schema_names(state, path, Schema.field_names(sch))
+        accept_schema_sig(state, path, schema_signature(sch))
     end
   end
 
-  defp accept_schema_names(state, path, names) do
-    cond do
-      is_nil(state.schema_names) ->
-        {:ok, %{state | schema_names: names}}
+  defp schema_signature(schema) do
+    schema
+    |> Schema.fields()
+    |> Enum.map(fn f -> {f.name, f.type} end)
+  end
 
-      state.schema_names == names ->
+  defp accept_schema_sig(state, path, sig) do
+    cond do
+      is_nil(state.schema_sig) ->
+        {:ok, %{state | schema_sig: sig}}
+
+      state.schema_sig == sig ->
         {:ok, state}
 
       true ->
         {:error,
-         "schema mismatch in #{path}: expected columns #{inspect(state.schema_names)}, got #{inspect(names)}"}
+         "schema mismatch in #{path}: expected #{inspect(state.schema_sig)}, got #{inspect(sig)}"}
     end
   end
 
@@ -576,32 +580,20 @@ defmodule ExArrow.Scanner do
       | row_groups_selected: stats.row_groups_selected + Map.get(rg, :row_groups_selected, 0),
         row_groups_skipped: stats.row_groups_skipped + Map.get(rg, :row_groups_skipped, 0)
     }
-  rescue
-    _ -> stats
   end
 
   defp advance(agent) do
     Agent.get_and_update(agent, fn state ->
-      next_index = state.index + 1
+      case state.remaining do
+        [] ->
+          {:done, clear_current(state)}
 
-      if next_index >= length(state.fragments) do
-        {:done,
-         %{
-           state
-           | index: next_index,
-             current_inner: nil,
-             current_path: nil,
-             current_fragment: nil
-         }}
-      else
-        {:ok,
-         %{
-           state
-           | index: next_index,
-             current_inner: nil,
-             current_path: nil,
-             current_fragment: nil
-         }}
+        [_opened | rest] ->
+          if rest == [] do
+            {:done, clear_current(%{state | remaining: rest})}
+          else
+            {:ok, clear_current(%{state | remaining: rest})}
+          end
       end
     end)
   end

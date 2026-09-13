@@ -143,7 +143,7 @@ defmodule ExArrow.DatasetTest do
       frag = Enum.find(fragments, &(&1.path == Path.expand(p1)))
       assert {:ok, meta} = Fragment.metadata(frag)
       assert meta.num_rows == 2
-      assert meta.num_row_groups >= 1
+      assert meta.num_row_groups == 1
     end
 
     @tag :tmp_dir
