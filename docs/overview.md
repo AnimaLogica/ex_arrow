@@ -3,6 +3,26 @@
 The main overview, installation, quick start, and usage examples live in the
 [README on GitHub](https://github.com/thanos/ex_arrow/blob/main/README.md).
 
+## What's changed in v0.9.0
+
+v0.9.0 adds a Dataset / Scanner layer for discovering Hive-partitioned
+Parquet (and IPC) trees and scanning them with analyzable Expression filters.
+Partition pruning, Parquet row-group pushdown, and residual
+`Compute.filter/2` form a pushdown ladder. See the
+[Datasets guide](../guides/11_datasets.md) and `livebook/06_datasets.livemd`.
+
+New / changed:
+
+- **`ExArrow.Dataset`** — open a directory, file, glob, or path list;
+  Hive `partition_values`; schema from footer without decoding pages.
+- **`ExArrow.Scanner`** — lazy `scanner/2` / `to_stream/1` with `:columns`
+  and `:filter` (`Expression` or legacy tuple); `stats/1` with exact prune
+  counts.
+- **`ExArrow.Compute.Expression`** — builders, `validate/2`,
+  `to_parquet_filters/1` (pushable vs residual).
+- **`ExArrow.FileSystem`** — Local and Memory backends for discovery.
+- **`RecordBatch.from_lists/1` / `from_map/1`** — ergonomic batch construction.
+
 ## What's changed in v0.8.0
 
 v0.8.0 makes Parquet a first-class citizen for larger-than-memory workloads.
@@ -68,6 +88,7 @@ New guides: [05 Arrow pipelines overview](05_arrow_pipelines_overview.md),
 | Arrow Flight SQL remote query client | [Flight SQL guide](flight_sql_guide.md) |
 | ADBC database connectivity | [ADBC guide](adbc_guide.md) |
 | Parquet read and write | [Parquet guide](parquet_guide.md) |
+| Datasets and scanners | [Datasets guide](../guides/11_datasets.md) |
 | Compute kernels (filter, project, sort) | [Compute guide](compute_guide.md) |
 | C Data Interface (CDI) | [CDI guide](cdi_guide.md) |
 | Nx tensor bridge | [Nx guide](nx_guide.md) |

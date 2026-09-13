@@ -12,8 +12,9 @@ Tutorial notebooks for the **ex_arrow** library, suitable for an introductory Me
 | **03_adbc.livemd** | ADBC: `:adbc_package` backend, Database → Connection → Statement → Stream, metadata APIs (native driver), Explorer roundtrip. |
 | **04_adbc_integration.livemd** | **adbc_package** backend with connection pooling (NimblePool), concurrent queries. |
 | **05_parquet.livemd** | v0.8 Parquet pushdown, compressed write, multi-file directory, IPC file writer (PyArrow side-by-side). |
+| **06_datasets.livemd** | v0.9 Dataset / Scanner: Hive open, Expression filters, prune stats (PyArrow `dataset` side-by-side). |
 
-Together they demonstrate ExArrow functionality: IPC (stream + file), Flight (client + server + Flight SQL), ADBC (Arrow result streams), Parquet pushdown/multi-file, and the pipeline DSL (`ExArrow.Stream`, `ExArrow.Batch`, `ExArrow.Pipeline`, telemetry).
+Together they demonstrate ExArrow functionality: IPC (stream + file), Flight (client + server + Flight SQL), ADBC (Arrow result streams), Parquet pushdown/multi-file, Datasets/Scanners, and the pipeline DSL (`ExArrow.Stream`, `ExArrow.Batch`, `ExArrow.Pipeline`, telemetry).
 
 ## How to run
 

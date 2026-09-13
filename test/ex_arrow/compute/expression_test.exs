@@ -23,10 +23,26 @@ defmodule ExArrow.Compute.ExpressionTest do
       assert to_string(E.scalar(true)) == "scalar(true)"
       assert to_string(E.scalar("x")) == "scalar(\"x\")"
       assert to_string(E.scalar(~D[2026-01-01])) =~ "2026-01-01"
+      assert to_string(E.scalar(~N[2026-01-01 12:00:00])) =~ "2026-01-01"
     end
 
     test "scalar/1 rejects invalid UTF-8" do
       assert_raise ArgumentError, fn -> E.scalar(<<0xFF>>) end
+    end
+
+    test "every comparison constructor builds the expected op" do
+      f = E.field("x")
+      s = E.scalar(1)
+
+      assert %E{node: {:call, :eq, _}} = E.eq(f, s)
+      assert %E{node: {:call, :ne, _}} = E.ne(f, s)
+      assert %E{node: {:call, :gt, _}} = E.gt(f, s)
+      assert %E{node: {:call, :gte, _}} = E.gte(f, s)
+      assert %E{node: {:call, :lt, _}} = E.lt(f, s)
+      assert %E{node: {:call, :lte, _}} = E.lte(f, s)
+      assert %E{node: {:call, :and, _}} = E.and_(E.eq(f, s), E.ne(f, s))
+      assert %E{node: {:call, :or, _}} = E.or_(E.eq(f, s), E.ne(f, s))
+      assert %E{node: {:call, :not, _}} = E.not_(E.eq(f, s))
     end
 
     test "comparisons and boolean composition render" do
@@ -122,9 +138,25 @@ defmodule ExArrow.Compute.ExpressionTest do
       assert {nil, %E{}} = E.to_parquet_filters(expr)
     end
 
-    test "field-vs-field comparison is residual" do
-      expr = E.gt(E.field("a"), E.field("b"))
-      assert {nil, %E{}} = E.to_parquet_filters(expr)
+    test "OR pushes when both sides are pushable" do
+      expr = E.or_(E.eq(E.field("id"), E.scalar(1)), E.eq(E.field("id"), E.scalar(2)))
+      assert {{:or, [{:eq, "id", 1}, {:eq, "id", 2}]}, nil} = E.to_parquet_filters(expr)
+    end
+
+    test "validate/2 accepts a field-name map (partition merge)" do
+      fields = %{"year" => :int32, "amount" => :float64}
+
+      assert {:ok, _} =
+               E.validate(
+                 E.and_(
+                   E.gte(E.field("year"), E.scalar(2026)),
+                   E.gt(E.field("amount"), E.scalar(0.0))
+                 ),
+                 fields
+               )
+
+      assert {:error, msg} = E.validate(E.eq(E.field("missing"), E.scalar(1)), fields)
+      assert msg =~ "unknown field"
     end
   end
 
@@ -215,6 +247,28 @@ defmodule ExArrow.Compute.ExpressionTest do
 
       assert {:call, :gte, [_, {:scalar, {:date32, _}}]} =
                E.encode_for_nif(E.gte(E.field("d"), E.scalar(~D[2026-01-01])))
+
+      naive = ~N[2026-03-01 08:30:00]
+
+      assert {:call, :lt, [_, {:scalar, {:timestamp_micros, _}}]} =
+               E.encode_for_nif(E.lt(E.field("ts"), E.scalar(naive)))
+    end
+
+    test "to_parquet_filters rejects non-utf8 string? covered via scalar builder" do
+      # Invalid UTF-8 cannot be built; empty string is pushable.
+      assert {{:eq, "name", ""}, nil} = E.to_parquet_filters(E.eq(E.field("name"), E.scalar("")))
+    end
+
+    test "validate rejects bad widths for unsigned and float32" do
+      schema =
+        schema_for([
+          {"u8", :u8, [1]},
+          {"f32", :f32, [1.0]}
+        ])
+
+      assert {:error, _} = E.validate(E.eq(E.field("u8"), E.scalar(-1)), schema)
+      assert {:error, _} = E.validate(E.eq(E.field("u8"), E.scalar(300)), schema)
+      assert {:ok, _} = E.validate(E.eq(E.field("f32"), E.scalar(1)), schema)
     end
   end
 end

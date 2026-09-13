@@ -119,6 +119,7 @@ defmodule ExArrow.MixProject do
         "guides/08_arrow_and_genstage.md",
         "guides/09_arrow_and_broadway.md",
         "guides/10_arrow_pipeline_patterns.md",
+        "guides/11_datasets.md",
         "docs/overview.md",
         "docs/memory_model.md",
         "docs/ipc_guide.md",
@@ -136,6 +137,14 @@ defmodule ExArrow.MixProject do
         IPC: [ExArrow.IPC.Reader, ExArrow.IPC.Writer, ExArrow.IPC.File],
         Parquet: [ExArrow.Parquet.Reader, ExArrow.Parquet.Writer, ExArrow.Parquet.Metadata],
         "Compute kernels": [ExArrow.Compute, ExArrow.Compute.Expression],
+        Dataset: [
+          ExArrow.Dataset,
+          ExArrow.Dataset.Fragment,
+          ExArrow.Scanner,
+          ExArrow.FileSystem,
+          ExArrow.FileSystem.Local,
+          ExArrow.FileSystem.Memory
+        ],
         "Batch operations": [ExArrow.Batch],
         Pipeline: [
           ExArrow.Pipeline,

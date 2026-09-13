@@ -415,6 +415,7 @@ without `:telemetry`, the Flow/GenStage/Broadway modules return
 - [08 Arrow and GenStage](guides/08_arrow_and_genstage.md)
 - [09 Arrow and Broadway](guides/09_arrow_and_broadway.md)
 - [10 Arrow pipeline patterns](guides/10_arrow_pipeline_patterns.md)
+- [11 Datasets and scanners](guides/11_datasets.md)
 
 ### New benchmarks
 
@@ -435,6 +436,7 @@ Interactive notebooks (open in [Livebook](https://livebook.dev)):
 - **[03 ADBC](livebook/03_adbc.livemd)** — Database, Connection, Statement, Stream (`:adbc_package` in Livebook).
 - **[04 ADBC integration](livebook/04_adbc_integration.livemd)** — Connection pooling with NimblePool.
 - **[05 Parquet](livebook/05_parquet.livemd)** — Pushdown reads, compressed writes, multi-file directories, PyArrow side-by-side.
+- **[06 Datasets](livebook/06_datasets.livemd)** — Hive Dataset open, Expression scanner, prune stats, PyArrow `dataset` side-by-side.
 
 See [livebook/README.md](livebook/README.md) for run instructions.  Notebooks use Hex `~> 0.8.0` by default; opening from `livebook/` in a clone builds from source.
 
@@ -760,6 +762,40 @@ meta.num_row_groups
 
 Full guide: [docs/parquet_guide.md](docs/parquet_guide.md). Livebook:
 `livebook/05_parquet.livemd`.
+
+---
+
+## Datasets and scanners
+
+Discover Hive-partitioned Parquet (or IPC) trees, then scan with projection
+and Expression filters. Partition pruning, Parquet row-group pushdown, and
+residual `Compute.filter/2` form a pushdown ladder.
+
+```elixir
+alias ExArrow.Compute.Expression, as: E
+
+{:ok, dataset} =
+  ExArrow.Dataset.open("/data/events",
+    partitioning: {:hive, schema: [{"year", :int32}, {"month", :int32}]}
+  )
+
+filter =
+  E.and_(
+    E.gte(E.field("year"), E.scalar(2026)),
+    E.gt(E.field("amount"), E.scalar(0.0))
+  )
+
+{:ok, scanner} =
+  ExArrow.Dataset.scanner(dataset, columns: ["id", "amount"], filter: filter)
+
+{:ok, stream} = ExArrow.Scanner.to_stream(scanner)
+batches = Enum.to_list(stream)
+ExArrow.Stream.close(stream)
+ExArrow.Scanner.stats(stream)
+```
+
+Full guide: [guides/11_datasets.md](guides/11_datasets.md). Livebook:
+`livebook/06_datasets.livemd`.
 
 ---
 
@@ -1106,6 +1142,7 @@ The CI workflow posts a PR alert comment when any scenario regresses more than
 - [Arrow and GenStage](guides/08_arrow_and_genstage.md) — demand-driven producers with backpressure
 - [Arrow and Broadway](guides/09_arrow_and_broadway.md) — ingestion pipelines with `BatchBuilder` and sinks
 - [Arrow Pipeline Patterns](guides/10_arrow_pipeline_patterns.md) — composable `ExArrow.Pipeline` transforms and sinks
+- [Datasets and Scanners](guides/11_datasets.md) — Dataset, Fragment, Hive partitioning, Scanner pushdown ladder
 - [Memory model](docs/memory_model.md) — handles, copying rules, NIF scheduling
 - [IPC guide](docs/ipc_guide.md) — stream vs file, types, limitations
 - [Parquet guide](docs/parquet_guide.md) — read/write Parquet, streaming, comparison with IPC

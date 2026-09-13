@@ -254,6 +254,24 @@ defmodule ExArrow.ScannerTest do
       refute Partition.may_match?({:gte, "year", 2026}, %{"year" => 2025})
     end
 
+    test "not_/1 and legacy and/or lists for partition prune" do
+      alias ExArrow.Scanner.Partition
+
+      expr = E.not_(E.eq(E.field("year"), E.scalar(2025)))
+      assert Partition.may_match?(expr, %{"year" => 2026})
+      refute Partition.may_match?(expr, %{"year" => 2025})
+
+      assert Partition.may_match?(
+               {:or, [{:eq, "year", 2026}, {:eq, "year", 2025}]},
+               %{"year" => 2025}
+             )
+
+      refute Partition.may_match?(
+               {:and, [{:eq, "year", 2026}, {:eq, "month", 1}]},
+               %{"year" => 2026, "month" => 2}
+             )
+    end
+
     test "compile strips partition keys from pushed filters" do
       alias ExArrow.Scanner.Compile
 
@@ -275,6 +293,16 @@ defmodule ExArrow.ScannerTest do
 
       assert {:ok, {nil, %E{} = residual}} = Compile.compile(or_expr, ["year"])
       assert E.to_string(residual) =~ "or_"
+    end
+
+    test "bind_partitions replaces hive fields with scalars" do
+      alias ExArrow.Scanner.Compile
+
+      expr = E.and_(E.eq(E.field("year"), E.scalar(2026)), E.gt(E.field("id"), E.scalar(0)))
+      bound = Compile.bind_partitions(expr, %{"year" => 2026})
+      assert to_string(bound) =~ "scalar(2026)"
+      assert to_string(bound) =~ "field(\"id\")"
+      assert Compile.bind_partitions(nil, %{}) == nil
     end
   end
 
