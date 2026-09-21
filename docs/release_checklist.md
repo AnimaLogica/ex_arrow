@@ -12,8 +12,10 @@ Before the first release:
    **Settings → Actions → General → Workflow permissions** → select **Read and write permissions** so the Precompiled NIFs workflow can create releases and upload assets.
 
 2. **Base URL for NIF downloads**  
-   In `lib/ex_arrow/native.ex`, the `base_url` must point at your GitHub releases. Replace `your-org` with your actual GitHub org or username:  
-   `https://github.com/your-org/ex_arrow/releases/download/v#{version}`
+   In `lib/ex_arrow/native.ex`, the `base_url` must point at the GitHub
+   releases for this repo:
+
+   `https://github.com/AnimaLogica/ex_arrow/releases/download/v#{version}`
 
 3. **Hex.pm account**  
    Ensure you have publish rights for the package (e.g. `mix hex.organization auth hexpm` if publishing under an org).
@@ -51,10 +53,19 @@ RustlerPrecompiled requires a **checksum file** in the Hex package to verify dow
 mix rustler_precompiled.download ExArrow.Native --all --print > checksum-Elixir.ExArrow.Native.exs
 ```
 
-- Commit and push:  
-  `git add checksum-Elixir.ExArrow.Native.exs && git commit -m "Add checksum for precompiled NIFs v0.1.0" && git push origin main`
+- Confirm the map is non-empty (real `sha256:` digests for `vX.Y.Z` assets).
+- The file is **gitignored** on purpose (see `.gitignore`) so an empty map
+  cannot be committed by accident. Force-add the populated file:
 
-The `package` in `mix.exs` already includes `checksum-*.exs`, so this file will be in the Hex package.
+```bash
+git add -f checksum-Elixir.ExArrow.Native.exs
+git commit -m "Add checksum for precompiled NIFs v0.1.0"
+git push origin main
+```
+
+`mix.exs` already lists `checksum-*.exs` in `:files`, so Hex packages the
+on-disk file even if you publish without committing — committing the
+populated checksum is still preferred so the release branch matches Hex.
 
 ### 5. Publish to Hex.pm
 
@@ -75,7 +86,7 @@ The `package` in `mix.exs` already includes `checksum-*.exs`, so this file will 
 ### 7. Announce the release
 
 - Update the release date in `CHANGELOG.md` (replace `TBD` with the actual date).
-- Use the copy-paste text in `docs/release_announcement.md` for the Elixir Forum, Elixir Weekly, and similar outlets. Replace `your-org` in links with your GitHub org or username.
+- Use the copy-paste text in `docs/release_announcement.md` for the Elixir Forum, Elixir Weekly, and similar outlets. Links should use `https://github.com/AnimaLogica/ex_arrow`.
 
 ---
 

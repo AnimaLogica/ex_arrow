@@ -147,7 +147,7 @@ MIX_ENV=dev mix run bench/dataset_scan_bench.exs
 Benchmark results from every push to `main` are stored in the `gh-pages`
 branch and displayed as a trend chart at:
 
-**https://thanos.github.io/ex_arrow/dev/bench/**
+**https://animalogica.github.io/ex_arrow/dev/bench/**
 
 The GitHub Actions workflow (`.github/workflows/benchmarks.yml`) also:
 

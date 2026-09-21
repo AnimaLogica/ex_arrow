@@ -1,7 +1,7 @@
 # ExArrow 0.1.0 — Release notes
 
 **Release date:** 2026-02-26 
-**Package:** [Hex](https://hex.pm/packages/ex_arrow) | **Docs:** [hexdocs.pm/ex_arrow](https://hexdocs.pm/ex_arrow) | **Source:** [GitHub](https://github.com/thanos/ex_arrow)
+**Package:** [Hex](https://hex.pm/packages/ex_arrow) | **Docs:** [hexdocs.pm/ex_arrow](https://hexdocs.pm/ex_arrow) | **Source:** [GitHub](https://github.com/AnimaLogica/ex_arrow)
 
 ---
 
@@ -64,4 +64,4 @@ See [CHANGELOG.md](../CHANGELOG.md) for the full 0.1.0 entry.
 
 ## Feedback
 
-Issues and discussions: [GitHub Issues](https://github.com/thanos/ex_arrow/issues).
+Issues and discussions: [GitHub Issues](https://github.com/AnimaLogica/ex_arrow/issues).

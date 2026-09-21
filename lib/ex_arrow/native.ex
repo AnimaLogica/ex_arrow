@@ -10,7 +10,7 @@ defmodule ExArrow.Native do
     rustler_precompiled_opts = [
       otp_app: :ex_arrow,
       crate: "ex_arrow_native",
-      base_url: "https://github.com/thanos/ex_arrow/releases/download/v#{version}",
+      base_url: "https://github.com/AnimaLogica/ex_arrow/releases/download/v#{version}",
       version: version,
       nif_versions: ["2.15", "2.16"],
       targets: [

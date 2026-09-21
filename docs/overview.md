@@ -1,7 +1,7 @@
 # Overview
 
 The main overview, installation, quick start, and usage examples live in the
-[README on GitHub](https://github.com/thanos/ex_arrow/blob/main/README.md).
+[README on GitHub](https://github.com/AnimaLogica/ex_arrow/blob/main/README.md).
 
 ## What's changed in v0.9.0
 

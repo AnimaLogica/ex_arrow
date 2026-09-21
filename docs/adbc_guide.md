@@ -19,7 +19,7 @@ Flow: **Database.open** → **Connection.open** → **Statement.new(conn, sql)**
 
 If the driver cannot be loaded (wrong path, missing env), `Database.open/1` returns `{:error, message}`.
 
-**Installing a driver:** For step-by-step options (the [`adbc`](https://hex.pm/packages/adbc) Hex package and its precompiled artifacts, or building from [Apache Arrow ADBC](https://github.com/apache/arrow-adbc)), see [livebook/INSTALL_ADBC_DRIVER.md](https://github.com/thanos/ex_arrow/blob/main/livebook/INSTALL_ADBC_DRIVER.md).
+**Installing a driver:** For step-by-step options (the [`adbc`](https://hex.pm/packages/adbc) Hex package and its precompiled artifacts, or building from [Apache Arrow ADBC](https://github.com/apache/arrow-adbc)), see [livebook/INSTALL_ADBC_DRIVER.md](https://github.com/AnimaLogica/ex_arrow/blob/main/livebook/INSTALL_ADBC_DRIVER.md).
 
 ## Using the `adbc` package for driver setup
 

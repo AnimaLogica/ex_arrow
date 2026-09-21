@@ -2,7 +2,7 @@ defmodule ExArrow.MixProject do
   use Mix.Project
 
   @version "0.9.0"
-  @source_url "https://github.com/thanos/ex_arrow"
+  @source_url "https://github.com/AnimaLogica/ex_arrow"
 
   def project do
     [

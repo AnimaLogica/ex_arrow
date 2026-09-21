@@ -1,6 +1,6 @@
 # ExArrow 0.1.0 — Release notes and announcements
 
-Copy-paste ready text for each channel. Links use `https://github.com/thanos/ex_arrow`; change if your repo is elsewhere.
+Copy-paste ready text for each channel. Links use `https://github.com/AnimaLogica/ex_arrow`; change if your repo is elsewhere.
 
 Full release notes: [RELEASE_NOTES_0.1.0.md](RELEASE_NOTES_0.1.0.md).
 
@@ -22,7 +22,7 @@ Requirements: Elixir ~> 1.14 (OTP 25/26, NIF 2.15 and 2.16).
 
 - Hex: https://hex.pm/packages/ex_arrow  
 - Docs: https://hexdocs.pm/ex_arrow  
-- GitHub: https://github.com/thanos/ex_arrow  
+- GitHub: https://github.com/AnimaLogica/ex_arrow  
 
 Feedback and issues welcome.
 
@@ -40,7 +40,7 @@ Good fit for data pipelines, ETL, talking to Flight services (Dremio, InfluxDB I
 
 - https://hex.pm/packages/ex_arrow  
 - https://hexdocs.pm/ex_arrow  
-- https://github.com/thanos/ex_arrow  
+- https://github.com/AnimaLogica/ex_arrow  
 
 ---
 
@@ -52,7 +52,7 @@ Good fit for data pipelines, ETL, talking to Flight services (Dremio, InfluxDB I
 
 ExArrow 0.1.0 is a new Elixir library for Apache Arrow: IPC stream/file read-write, Arrow Flight (gRPC) client and server, and ADBC for SQL-to-Arrow result streams. Data stays in native memory; precompiled NIFs so no Rust toolchain needed. Elixir ~> 1.14.
 
-https://hex.pm/packages/ex_arrow | https://github.com/thanos/ex_arrow
+https://hex.pm/packages/ex_arrow | https://github.com/AnimaLogica/ex_arrow
 
 ---
 
@@ -62,7 +62,7 @@ https://hex.pm/packages/ex_arrow | https://github.com/thanos/ex_arrow
 
 **Blurb:**
 
-ExArrow 0.1.0 is on Hex. Apache Arrow support for Elixir: IPC (stream and file), Arrow Flight (client and echo server), and ADBC for Arrow-native database results. Data in native buffers; precompiled NIFs for Linux, macOS, Windows. Elixir ~> 1.14, OTP 25+. [Hex](https://hex.pm/packages/ex_arrow) | [Docs](https://hexdocs.pm/ex_arrow) | [GitHub](https://github.com/thanos/ex_arrow)
+ExArrow 0.1.0 is on Hex. Apache Arrow support for Elixir: IPC (stream and file), Arrow Flight (client and echo server), and ADBC for Arrow-native database results. Data in native buffers; precompiled NIFs for Linux, macOS, Windows. Elixir ~> 1.14, OTP 25+. [Hex](https://hex.pm/packages/ex_arrow) | [Docs](https://hexdocs.pm/ex_arrow) | [GitHub](https://github.com/AnimaLogica/ex_arrow)
 
 ---
 
@@ -78,4 +78,4 @@ Use the first two paragraphs of [RELEASE_NOTES_0.1.0.md](RELEASE_NOTES_0.1.0.md)
 
 **Installation:** `{:ex_arrow, "~> 0.1.0"}` — then `mix deps.get` and `mix compile`.
 
-**Links:** [Hex](https://hex.pm/packages/ex_arrow) | [Docs](https://hexdocs.pm/ex_arrow) | [GitHub](https://github.com/thanos/ex_arrow)
+**Links:** [Hex](https://hex.pm/packages/ex_arrow) | [Docs](https://hexdocs.pm/ex_arrow) | [GitHub](https://github.com/AnimaLogica/ex_arrow)

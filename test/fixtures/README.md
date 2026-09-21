@@ -7,7 +7,7 @@
 - **Zstandard Parquet (interop):** `parquet_zstd.parquet` contains three rows
   with `id` (int64) and `name` (utf8), produced outside ExArrow (DuckDB) so we
   verify compressed reads against third-party writers. Contributed via
-  [PR #243](https://github.com/thanos/ex_arrow/pull/243) (@mindreframer).
+  [PR #243](https://github.com/AnimaLogica/ex_arrow/pull/243) (@mindreframer).
   Regenerate with:
 
   ```sh

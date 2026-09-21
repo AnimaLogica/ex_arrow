@@ -1,10 +1,10 @@
 # ExArrow
 
-[![CI](https://github.com/thanos/ex_arrow/actions/workflows/ci.yml/badge.svg)](https://github.com/thanos/ex_arrow/actions/workflows/ci.yml)
+[![CI](https://github.com/AnimaLogica/ex_arrow/actions/workflows/ci.yml/badge.svg)](https://github.com/AnimaLogica/ex_arrow/actions/workflows/ci.yml)
 [![Hex version](https://img.shields.io/hexpm/v/ex_arrow.svg)](https://hex.pm/packages/ex_arrow)
 [![Hex docs](https://img.shields.io/badge/docs-hexdocs.pm-blue)](https://ex-arrow.hexdocs.pm)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Coverage Status](https://coveralls.io/repos/github/thanos/ex_arrow/badge.svg?branch=main)](https://coveralls.io/github/thanos/ex_arrow?branch=main)
+[![Coverage Status](https://coveralls.io/repos/github/AnimaLogica/ex_arrow/badge.svg?branch=main)](https://coveralls.io/github/AnimaLogica/ex_arrow?branch=main)
 
 
 Native Apache Arrow for the BEAM: IPC streaming, Arrow Flight, Arrow Flight SQL, ADBC database bindings, and Arrow-native pipelines. Column data lives in Rust buffers; Elixir holds lightweight opaque handles. Precompiled NIFs for Linux, macOS, and Windows — no Rust required to use.
@@ -210,7 +210,7 @@ stream data, or call custom actions — from a Phoenix controller, a GenServer,
 or a Livebook cell.
 - **Benchmarked, observable performance.** The included Benchee suite
 quantifies the zero-copy advantage and publishes results per commit at
-[thanos.github.io/ex_arrow/dev/bench](https://thanos.github.io/ex_arrow/dev/bench/).
+[animalogica.github.io/ex_arrow/dev/bench](https://animalogica.github.io/ex_arrow/dev/bench/).
 
 ---
 
@@ -1169,7 +1169,7 @@ HTML reports are written to `bench/output/` (gitignored).
 ### Published results
 
 Results from every push to `main` are published at:
-**[https://thanos.github.io/ex_arrow/dev/bench/](https://thanos.github.io/ex_arrow/dev/bench/)**
+**[https://animalogica.github.io/ex_arrow/dev/bench/](https://animalogica.github.io/ex_arrow/dev/bench/)**
 
 The CI workflow posts a PR alert comment when any scenario regresses more than
 20% relative to the previous baseline.
